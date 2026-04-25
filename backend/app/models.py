@@ -182,6 +182,8 @@ class ReimbursementRate(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
@@ -193,7 +195,10 @@ class BillingRule(Base):
     rule_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     rule_value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class ServiceType(Base):
@@ -217,6 +222,7 @@ class ClassificationRule(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class AppSetting(Base):
@@ -226,7 +232,10 @@ class AppSetting(Base):
     setting_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     setting_value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class DocumentTemplate(Base):
@@ -240,5 +249,38 @@ class DocumentTemplate(Base):
     placeholder_style: Mapped[str] = mapped_column(String(50), nullable=False)
     cleanup_rules_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class TemplateRenderLog(Base):
+    __tablename__ = "template_render_logs"
+    __table_args__ = (Index("ix_template_render_logs_document_type", "document_type"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    document_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    template_id: Mapped[str | None] = mapped_column(ForeignKey("document_templates.id"), nullable=True)
+    patient_id: Mapped[str | None] = mapped_column(ForeignKey("patients.id", ondelete="SET NULL"), nullable=True)
+    output_document_id: Mapped[str | None] = mapped_column(ForeignKey("output_documents.id", ondelete="SET NULL"), nullable=True)
+    render_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    missing_placeholders_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    unreplaced_placeholders_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    cleanup_warnings_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    render_context_snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    html_preview_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ConfigChangeLog(Base):
+    __tablename__ = "config_change_log"
+    __table_args__ = (Index("ix_config_change_log_type_key", "config_type", "config_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    config_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    config_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    previous_value_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    new_value_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    changed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { LoginPanel } from "@/components/login-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { AdminConfig, BillingComparison, BillingSummary, CurrentUser, Patient, SourceDocument, apiFetch } from "@/lib/api";
+import { AdminConfig, API_BASE, BillingComparison, BillingSummary, CurrentUser, Patient, SourceDocument, TemplatePreview, apiFetch } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 
 type GenerateFn = (path: string, body: object) => Promise<void>;
@@ -694,8 +694,9 @@ function AdminSettingsPanel({ config, token, onConfig }: { config: AdminConfig; 
         <AdminMiniTable
           title="Template registry"
           subtitle="Production HTML templates and placeholder metadata."
-          rows={config.templates.map((template) => [template.document_type, template.template_name, `${template.placeholders.length} placeholders`])}
+          rows={config.templates.map((template) => [template.document_type, `${template.template_name} v${template.version}`, `${template.placeholders.length} placeholders`])}
         />
+        <AdminTemplatePreview templates={config.templates} token={token} />
         <AdminMiniTable
           title="Workflow settings"
           subtitle="Autosave, review, Drive scan, and default payer settings."
@@ -793,6 +794,76 @@ function AdminClassificationEditor({ rules, onCreate, onSave }: { rules: AdminCo
           </form>
         ))}
       </div>
+    </Card>
+  );
+}
+
+function AdminTemplatePreview({ templates, token }: { templates: AdminConfig["templates"]; token: string }) {
+  const [templateId, setTemplateId] = useState(templates[0]?.id || "");
+  const [preview, setPreview] = useState<TemplatePreview | null>(null);
+  const selected = templates.find((template) => template.id === templateId) || templates[0];
+
+  useEffect(() => {
+    if (!selected) return;
+    setTemplateId((current) => current || selected.id);
+  }, [selected]);
+
+  async function loadPreview() {
+    if (!selected) return;
+    const values = Object.fromEntries(selected.placeholders.slice(0, 30).map((placeholder) => [placeholder, `Sample ${placeholder.replaceAll("_", " ")}`]));
+    setPreview(await apiFetch<TemplatePreview>(`/admin/templates/${selected.id}/preview-html`, token, { method: "POST", body: JSON.stringify({ values }) }));
+  }
+
+  async function openPdfPreview() {
+    if (!selected) return;
+    const values = Object.fromEntries(selected.placeholders.slice(0, 30).map((placeholder) => [placeholder, `Sample ${placeholder.replaceAll("_", " ")}`]));
+    const response = await fetch(`${API_BASE}/admin/templates/${selected.id}/preview-pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ values })
+    });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    window.open(URL.createObjectURL(blob), "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <Card>
+      <SectionHeader title="Template preview" subtitle="Inspect placeholders and render a cleaned sample from the backend template engine." />
+      {selected ? (
+        <div className="mt-4 grid gap-3">
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <select value={selected.id} onChange={(event) => { setTemplateId(event.target.value); setPreview(null); }} className="admin-input">
+              {templates.map((template) => <option key={template.id} value={template.id}>{template.document_type} · {template.template_name} v{template.version}</option>)}
+            </select>
+            <div className="flex gap-2">
+              <button onClick={loadPreview} className="rounded-xl bg-moss px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Render HTML</button>
+              <button onClick={openPdfPreview} className="rounded-xl border border-line bg-white px-4 py-2 text-xs font-bold text-moss shadow-sm transition hover:bg-sage">Preview PDF</button>
+            </div>
+          </div>
+          <div className="grid gap-2 rounded-2xl border border-line bg-cream p-3 text-xs text-muted">
+            <div className="font-bold text-ink">{selected.placeholders.length} placeholders</div>
+            <div className="max-h-20 overflow-auto leading-5">{selected.placeholders.slice(0, 60).join(", ")}</div>
+          </div>
+          {preview ? (
+            <div className="grid gap-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Metric label="Missing" value={`${preview.missing_placeholders.length}`} />
+                <Metric label="Unreplaced" value={`${preview.unreplaced_placeholders.length}`} />
+                <Metric label="Cleanup" value={`${preview.cleanup_warnings.length} notes`} />
+              </div>
+              <iframe title="Template preview" srcDoc={preview.html} className="h-[340px] w-full rounded-2xl border border-line bg-white shadow-sm" />
+              <details className="rounded-2xl border border-line bg-cream p-3 text-xs text-muted">
+                <summary className="cursor-pointer font-bold text-ink">Raw vs cleaned HTML diagnostics</summary>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3">{preview.raw_html || ""}</pre>
+                  <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3">{preview.html}</pre>
+                </div>
+              </details>
+            </div>
+          ) : null}
+        </div>
+      ) : <Empty text="No templates registered yet." />}
     </Card>
   );
 }

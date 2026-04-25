@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from .ai import get_ai_provider
 from .billing import BillingInput, select_cpt_codes
 from .drive import DriveClient, get_drive_service, mark_processed
-from .models import BillingSummary, DocumentType, FileType, OutputDocument, OutputStatus, Patient, ProcessingRun, SourceDocument
+from .models import BillingSummary, DocumentType, FileType, OutputDocument, OutputStatus, Patient, ProcessingRun, SourceDocument, TemplateRenderLog
 from .pdf import html_to_pdf_bytes
-from .templates import active_template, extract_placeholders, render_template
+from .render_context_mapper import map_ai_output_to_placeholders
+from .templates import active_template_record, extract_placeholders, render_template_with_diagnostics
 
 
 def get_summary_sources(db: Session, patient_id: str) -> list[SourceDocument]:
@@ -59,10 +60,13 @@ def create_output(
     source_document_id: str | None = None,
     drive: DriveClient | None = None,
 ) -> OutputDocument:
-    template, _ = active_template(db, doc_type)
-    placeholders = extract_placeholders(template)
-    structured = get_ai_provider().generate_structured(doc_type, patient, sources, placeholders)
-    html = render_template(doc_type, structured, db=db)
+    template = active_template_record(db, doc_type)
+    placeholders = extract_placeholders(template.source)
+    ai_output = get_ai_provider().generate_structured(doc_type, patient, sources, placeholders)
+    render_context = map_ai_output_to_placeholders(doc_type, patient, sources, ai_output, placeholders)
+    structured = {**ai_output, "render_context": render_context}
+    diagnostics = render_template_with_diagnostics(doc_type, render_context, db=db)
+    html = diagnostics.html
     pdf_bytes = html_to_pdf_bytes(html)
     drive_file_id = None
     if save_pdf:
@@ -84,6 +88,20 @@ def create_output(
     )
     db.add(output)
     db.flush()
+    db.add(
+        TemplateRenderLog(
+            document_type=doc_type.value,
+            template_id=diagnostics.template_id,
+            patient_id=patient.id,
+            output_document_id=output.id,
+            render_status="OK" if not diagnostics.unreplaced_placeholders else "WARN",
+            missing_placeholders_json={"placeholders": diagnostics.missing_placeholders, "count": len(diagnostics.missing_placeholders), "template_version": diagnostics.template_version},
+            unreplaced_placeholders_json={"placeholders": diagnostics.unreplaced_placeholders, "count": len(diagnostics.unreplaced_placeholders)},
+            cleanup_warnings_json={"warnings": diagnostics.cleanup_warnings},
+            render_context_snapshot_json=render_context,
+            html_preview_snapshot=html[:20000],
+        )
+    )
     if doc_type == DocumentType.SESSION_NOTE:
         create_billing_for_output(db, patient, output)
     db.add(ProcessingRun(patient_id=patient.id, doc_type=doc_type.value, success=True))

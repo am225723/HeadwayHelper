@@ -5,8 +5,10 @@ from fastapi.testclient import TestClient
 from app.admin_defaults import seed_admin_defaults
 from app.drive import classify_file
 from app.main import app
-from app.models import ClassificationRule, DocumentTemplate, DocumentType, FileType
-from app.templates import extract_placeholders, render_template, render_template_source
+from app.models import ClassificationRule, DocumentTemplate, DocumentType, FileType, Patient, SourceDocument, TemplateRenderLog
+from app.pdf import html_to_pdf_bytes
+from app.generation import generate_summary
+from app.templates import extract_placeholders, placeholder_counts, render_template, render_template_source
 
 
 client = TestClient(app)
@@ -51,6 +53,7 @@ def test_db_backed_classification_rule_overrides_defaults(db_session):
 
 def test_template_placeholder_detection_supports_both_styles():
     assert extract_placeholders("Hello $$PATIENT_NAME$$ on {{ date_of_service }}") == ["date_of_service", "patient_name"]
+    assert placeholder_counts("{{name}} {{ name }} $$NAME$$") == {"name": 3}
 
 
 def test_template_rendering_strips_ai_blocks_and_removes_not_documented_lines():
@@ -79,3 +82,84 @@ def test_active_db_template_is_used_for_generation_rendering(db_session):
     db_session.commit()
 
     assert render_template(DocumentType.SUMMARY, {"patient_name": "Jane Doe"}, db_session) == "<h1>Jane Doe</h1>"
+
+
+def test_admin_rate_crud_csv_and_change_log():
+    headers = _login("ADMIN")
+    create = client.post(
+        "/api/admin/reimbursement-rates",
+        headers=headers,
+        json={"payer_name": "Aetna", "cpt_code": "99214", "amount": 123.45, "is_active": True, "notes": "test"},
+    )
+    assert create.status_code == 201
+    rate_id = create.json()["id"]
+
+    update = client.put(
+        f"/api/admin/reimbursement-rates/{rate_id}",
+        headers=headers,
+        json={"payer_name": "Aetna", "cpt_code": "99214", "amount": 130.0, "is_active": True, "notes": "updated"},
+    )
+    assert update.status_code == 200
+    assert update.json()["updated_by"]
+
+    export = client.get("/api/admin/reimbursement-rates/export.csv", headers=headers)
+    assert export.status_code == 200
+    assert "payer_name,cpt_code,amount" in export.text
+
+    imported = client.post(
+        "/api/admin/reimbursement-rates/import-csv",
+        headers={**headers, "Content-Type": "text/csv"},
+        content="payer_name,cpt_code,amount,is_active,notes\nCigna,90837,155.50,true,imported\n",
+    )
+    assert imported.status_code == 200
+    assert imported.json()["count"] == 1
+
+    log = client.get("/api/admin/config-change-log", headers=headers)
+    assert log.status_code == 200
+    assert any(row["config_type"] == "reimbursement_rate" for row in log.json())
+
+
+def test_template_preview_placeholder_pdf_endpoints():
+    headers = _login("ADMIN")
+    templates = client.get("/api/admin/templates", headers=headers).json()
+    template_id = templates[0]["id"]
+
+    placeholders = client.get(f"/api/admin/templates/{template_id}/placeholders", headers=headers)
+    assert placeholders.status_code == 200
+    assert placeholders.json()["placeholder_count"] > 0
+
+    preview = client.post(f"/api/admin/templates/{template_id}/preview-html", headers=headers, json={"values": {}})
+    assert preview.status_code == 200
+    assert "html" in preview.json()
+    assert "placeholders" in preview.json()
+
+    pdf = client.post(f"/api/admin/templates/{template_id}/preview-pdf", headers=headers, json={"values": {}})
+    assert pdf.status_code == 200
+    assert pdf.content.startswith(b"%PDF")
+
+
+def test_pdf_rendering_has_no_raw_placeholders_or_ai_instructions():
+    html = render_template_source(
+        "<h1>$$PATIENT_NAME$$</h1><p>[AI: hidden]</p>",
+        {"patient_name": "Jane Doe"},
+        {"strip_instruction_blocks": True},
+    )
+    pdf = html_to_pdf_bytes(html)
+    assert pdf.startswith(b"%PDF")
+    assert b"$$PATIENT_NAME$$" not in pdf
+    assert b"AI:" not in pdf
+
+
+def test_generation_stores_template_render_log(db_session):
+    seed_admin_defaults(db_session)
+    patient = Patient(name="Jane Doe", drive_folder_id="folder")
+    db_session.add(patient)
+    db_session.flush()
+    db_session.add(SourceDocument(patient_id=patient.id, drive_file_id="intake-log", name="intake.pdf", file_type=FileType.INTAKE.value))
+    db_session.commit()
+
+    output = generate_summary(db_session, patient, save_pdf=False)
+    log = db_session.query(TemplateRenderLog).filter(TemplateRenderLog.output_document_id == output.id).first()
+    assert log is not None
+    assert log.document_type == DocumentType.SUMMARY.value
+    assert log.render_context_snapshot_json

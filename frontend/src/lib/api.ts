@@ -96,7 +96,17 @@ export type AdminTemplate = {
   placeholder_style: string;
   cleanup_rules_json: Record<string, unknown>;
   is_active: boolean;
+  version: number;
   placeholders: string[];
+};
+
+export type TemplatePreview = {
+  html: string;
+  raw_html: string | null;
+  placeholders: string[];
+  missing_placeholders: string[];
+  unreplaced_placeholders: string[];
+  cleanup_warnings: string[];
 };
 
 export type AdminConfig = {

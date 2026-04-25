@@ -178,6 +178,8 @@ class ReimbursementRateIn(BaseModel):
 
 class ReimbursementRateOut(ReimbursementRateIn, AdminBaseModel):
     id: str
+    created_by: str | None = None
+    updated_by: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -190,7 +192,10 @@ class BillingRuleIn(BaseModel):
 class BillingRuleOut(BillingRuleIn, AdminBaseModel):
     id: str
     rule_key: str
+    version: int = 1
+    created_at: datetime
     updated_at: datetime
+    updated_by: str | None = None
 
 
 class ServiceTypeIn(BaseModel):
@@ -215,6 +220,7 @@ class ClassificationRuleOut(ClassificationRuleIn, AdminBaseModel):
     id: str
     created_at: datetime
     updated_at: datetime
+    updated_by: str | None = None
 
 
 class AppSettingIn(BaseModel):
@@ -225,7 +231,10 @@ class AppSettingIn(BaseModel):
 class AppSettingOut(AppSettingIn, AdminBaseModel):
     id: str
     setting_key: str
+    version: int = 1
+    created_at: datetime
     updated_at: datetime
+    updated_by: str | None = None
 
 
 class DocumentTemplateIn(BaseModel):
@@ -239,8 +248,10 @@ class DocumentTemplateIn(BaseModel):
 
 class DocumentTemplateOut(DocumentTemplateIn, AdminBaseModel):
     id: str
+    version: int = 1
     created_at: datetime
     updated_at: datetime
+    updated_by: str | None = None
     placeholders: list[str] = Field(default_factory=list)
 
 
@@ -250,4 +261,25 @@ class TemplatePreviewRequest(BaseModel):
 
 class TemplatePreviewResponse(BaseModel):
     html: str
+    raw_html: str | None = None
     placeholders: list[str]
+    missing_placeholders: list[str] = Field(default_factory=list)
+    unreplaced_placeholders: list[str] = Field(default_factory=list)
+    cleanup_warnings: list[str] = Field(default_factory=list)
+
+
+class TemplatePlaceholdersResponse(BaseModel):
+    template_id: str
+    placeholders: list[str]
+    repeated_placeholders: dict[str, int]
+    placeholder_count: int
+
+
+class ConfigChangeLogOut(AdminBaseModel):
+    id: str
+    config_type: str
+    config_key: str
+    previous_value_json: dict | None
+    new_value_json: dict | None
+    changed_by: str | None
+    changed_at: datetime

@@ -1,4 +1,8 @@
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+import csv
+import json
+from io import StringIO
+
+from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, selectinload
 
@@ -9,9 +13,10 @@ from .database import Base, SessionLocal, engine, get_db
 from .billing import BillingInput, psychiatric_evaluation_comparison
 from .drive import get_drive_service, grouped_sources, sync_all_patient_folders, sync_patient_files
 from .generation import create_billing_for_output, dispatch_new_sources, generate_session_note, generate_summary, generate_treatment_plan
-from .models import AppSetting, BillingRule, BillingSummary, ClassificationRule, DocumentTemplate, DocumentType, OutputDocument, OutputStatus, Patient, ReimbursementRate, ReviewStatus, ReviewStatusValue, Role, ServiceType, SourceDocument, User
+from .models import AppSetting, BillingRule, BillingSummary, ClassificationRule, ConfigChangeLog, DocumentTemplate, DocumentType, OutputDocument, OutputStatus, Patient, ReimbursementRate, ReviewStatus, ReviewStatusValue, Role, ServiceType, SourceDocument, User
 from .pdf import html_to_pdf_bytes
-from .templates import extract_placeholders, render_template_source
+from .schema_compat import ensure_sqlite_admin_columns
+from .templates import extract_placeholders, placeholder_counts, render_template_source, render_template_source_with_diagnostics
 from .schemas import (
     AppSettingIn,
     AppSettingOut,
@@ -22,6 +27,7 @@ from .schemas import (
     BillingComparisonResponse,
     ClassificationRuleIn,
     ClassificationRuleOut,
+    ConfigChangeLogOut,
     ClassificationUpdate,
     DocumentTemplateIn,
     DocumentTemplateOut,
@@ -42,6 +48,7 @@ from .schemas import (
     SourceDocumentsResponse,
     TemplatePreviewRequest,
     TemplatePreviewResponse,
+    TemplatePlaceholdersResponse,
     Token,
     UserLogin,
     UserOut,
@@ -50,6 +57,7 @@ from .schemas import (
 
 
 Base.metadata.create_all(bind=engine)
+ensure_sqlite_admin_columns(engine)
 seed_db = SessionLocal()
 try:
     seed_admin_defaults(seed_db)
@@ -292,15 +300,66 @@ def _template_out(row: DocumentTemplate) -> DocumentTemplateOut:
     return data
 
 
+def _snapshot(row: object) -> dict:
+    data = {}
+    for key, value in vars(row).items():
+        if key.startswith("_"):
+            continue
+        data[key] = value
+    return json.loads(json.dumps(data, default=str))
+
+
+def _log_change(db: Session, config_type: str, config_key: str, previous: dict | None, new: dict | None, user: User) -> None:
+    db.add(ConfigChangeLog(config_type=config_type, config_key=config_key, previous_value_json=previous, new_value_json=new, changed_by=user.email))
+
+
 @app.get("/api/admin/reimbursement-rates", response_model=list[ReimbursementRateOut])
 def list_reimbursement_rates(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[ReimbursementRate]:
     return db.query(ReimbursementRate).order_by(ReimbursementRate.payer_name, ReimbursementRate.cpt_code).all()
 
 
+@app.get("/api/admin/reimbursement-rates/export.csv")
+def export_reimbursement_rates(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> Response:
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["payer_name", "cpt_code", "amount", "is_active", "notes"])
+    for row in db.query(ReimbursementRate).order_by(ReimbursementRate.payer_name, ReimbursementRate.cpt_code).all():
+        writer.writerow([row.payer_name, row.cpt_code, row.amount, row.is_active, row.notes or ""])
+    return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=reimbursement-rates.csv"})
+
+
+@app.post("/api/admin/reimbursement-rates/import-csv")
+def import_reimbursement_rates(csv_body: str = Body(..., media_type="text/csv"), db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> dict:
+    reader = csv.DictReader(StringIO(csv_body))
+    count = 0
+    for item in reader:
+        payer = (item.get("payer_name") or item.get("payer") or "").strip()
+        code = (item.get("cpt_code") or item.get("code") or "").strip()
+        if not payer or not code:
+            continue
+        row = db.query(ReimbursementRate).filter(ReimbursementRate.payer_name == payer, ReimbursementRate.cpt_code == code).first()
+        previous = _snapshot(row) if row else None
+        amount = float(item.get("amount") or 0)
+        active = str(item.get("is_active", "true")).lower() in {"true", "1", "yes", "active"}
+        if not row:
+            row = ReimbursementRate(payer_name=payer, cpt_code=code, amount=amount, is_active=active, notes=item.get("notes"), created_by=user.email, updated_by=user.email)
+            db.add(row)
+        else:
+            row.amount = amount
+            row.is_active = active
+            row.notes = item.get("notes")
+            row.updated_by = user.email
+        _log_change(db, "reimbursement_rate", f"{payer}:{code}", previous, {"payer_name": payer, "cpt_code": code, "amount": amount, "is_active": active, "notes": item.get("notes")}, user)
+        count += 1
+    db.commit()
+    return {"message": "Rates imported", "count": count}
+
+
 @app.post("/api/admin/reimbursement-rates", response_model=ReimbursementRateOut, status_code=201)
 def create_reimbursement_rate(payload: ReimbursementRateIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ReimbursementRate:
-    row = ReimbursementRate(**payload.model_dump())
+    row = ReimbursementRate(**payload.model_dump(), created_by=_.email, updated_by=_.email)
     db.add(row)
+    _log_change(db, "reimbursement_rate", f"{row.payer_name}:{row.cpt_code}", None, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -311,8 +370,11 @@ def update_reimbursement_rate(rate_id: str, payload: ReimbursementRateIn, db: Se
     row = db.get(ReimbursementRate, rate_id)
     if not row:
         raise HTTPException(status_code=404, detail="Rate not found")
+    previous = _snapshot(row)
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
+    row.updated_by = _.email
+    _log_change(db, "reimbursement_rate", f"{row.payer_name}:{row.cpt_code}", previous, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -323,6 +385,8 @@ def delete_reimbursement_rate(rate_id: str, db: Session = Depends(get_db), _: Us
     row = db.get(ReimbursementRate, rate_id)
     if not row:
         raise HTTPException(status_code=404, detail="Rate not found")
+    previous = _snapshot(row)
+    _log_change(db, "reimbursement_rate", f"{row.payer_name}:{row.cpt_code}", previous, None, _)
     db.delete(row)
     db.commit()
     return {"message": "Rate deleted"}
@@ -336,12 +400,16 @@ def list_billing_rules(db: Session = Depends(get_db), _: User = Depends(require_
 @app.put("/api/admin/billing-rules/{rule_key}", response_model=BillingRuleOut)
 def upsert_billing_rule(rule_key: str, payload: BillingRuleIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> BillingRule:
     row = db.query(BillingRule).filter(BillingRule.rule_key == rule_key).first()
+    previous = _snapshot(row) if row else None
     if not row:
-        row = BillingRule(rule_key=rule_key, rule_value_json=payload.rule_value_json, description=payload.description)
+        row = BillingRule(rule_key=rule_key, rule_value_json=payload.rule_value_json, description=payload.description, updated_by=_.email)
         db.add(row)
     else:
         row.rule_value_json = payload.rule_value_json
         row.description = payload.description
+        row.version = (row.version or 1) + 1
+        row.updated_by = _.email
+    _log_change(db, "billing_rule", rule_key, previous, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -356,6 +424,7 @@ def list_service_types(db: Session = Depends(get_db), _: User = Depends(require_
 def create_service_type(payload: ServiceTypeIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ServiceType:
     row = ServiceType(**payload.model_dump())
     db.add(row)
+    _log_change(db, "service_type", row.name, None, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -366,8 +435,10 @@ def update_service_type(service_type_id: str, payload: ServiceTypeIn, db: Sessio
     row = db.get(ServiceType, service_type_id)
     if not row:
         raise HTTPException(status_code=404, detail="Service type not found")
+    previous = _snapshot(row)
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
+    _log_change(db, "service_type", row.name, previous, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -380,8 +451,9 @@ def list_classification_rules(db: Session = Depends(get_db), _: User = Depends(r
 
 @app.post("/api/admin/classification-rules", response_model=ClassificationRuleOut, status_code=201)
 def create_classification_rule(payload: ClassificationRuleIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ClassificationRule:
-    row = ClassificationRule(**payload.model_dump())
+    row = ClassificationRule(**payload.model_dump(), updated_by=_.email)
     db.add(row)
+    _log_change(db, "classification_rule", f"{row.category}:{row.keyword_or_pattern}", None, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -392,8 +464,11 @@ def update_classification_rule(rule_id: str, payload: ClassificationRuleIn, db: 
     row = db.get(ClassificationRule, rule_id)
     if not row:
         raise HTTPException(status_code=404, detail="Classification rule not found")
+    previous = _snapshot(row)
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
+    row.updated_by = _.email
+    _log_change(db, "classification_rule", f"{row.category}:{row.keyword_or_pattern}", previous, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -404,6 +479,8 @@ def delete_classification_rule(rule_id: str, db: Session = Depends(get_db), _: U
     row = db.get(ClassificationRule, rule_id)
     if not row:
         raise HTTPException(status_code=404, detail="Classification rule not found")
+    previous = _snapshot(row)
+    _log_change(db, "classification_rule", f"{row.category}:{row.keyword_or_pattern}", previous, None, _)
     db.delete(row)
     db.commit()
     return {"message": "Classification rule deleted"}
@@ -417,12 +494,16 @@ def list_settings(db: Session = Depends(get_db), _: User = Depends(require_roles
 @app.put("/api/admin/settings/{setting_key}", response_model=AppSettingOut)
 def upsert_setting(setting_key: str, payload: AppSettingIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> AppSetting:
     row = db.query(AppSetting).filter(AppSetting.setting_key == setting_key).first()
+    previous = _snapshot(row) if row else None
     if not row:
-        row = AppSetting(setting_key=setting_key, setting_value_json=payload.setting_value_json, description=payload.description)
+        row = AppSetting(setting_key=setting_key, setting_value_json=payload.setting_value_json, description=payload.description, updated_by=_.email)
         db.add(row)
     else:
         row.setting_value_json = payload.setting_value_json
         row.description = payload.description
+        row.version = (row.version or 1) + 1
+        row.updated_by = _.email
+    _log_change(db, "app_setting", setting_key, previous, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return row
@@ -446,11 +527,25 @@ def update_template(template_id: str, payload: DocumentTemplateIn, db: Session =
     row = db.get(DocumentTemplate, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="Template not found")
+    previous = _snapshot(row)
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
+    row.version = (row.version or 1) + 1
+    row.updated_by = _.email
+    _log_change(db, "document_template", f"{row.document_type}:{row.template_name}", previous, payload.model_dump(), _)
     db.commit()
     db.refresh(row)
     return _template_out(row)
+
+
+@app.get("/api/admin/templates/{template_id}/placeholders", response_model=TemplatePlaceholdersResponse)
+def get_template_placeholders(template_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> TemplatePlaceholdersResponse:
+    row = db.get(DocumentTemplate, template_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    counts = placeholder_counts(row.template_source)
+    repeated = {key: count for key, count in counts.items() if count > 1}
+    return TemplatePlaceholdersResponse(template_id=row.id, placeholders=sorted(counts), repeated_placeholders=repeated, placeholder_count=len(counts))
 
 
 @app.post("/api/admin/templates/{template_id}/preview", response_model=TemplatePreviewResponse)
@@ -460,5 +555,61 @@ def preview_template(template_id: str, payload: TemplatePreviewRequest, db: Sess
         raise HTTPException(status_code=404, detail="Template not found")
     placeholders = extract_placeholders(row.template_source)
     values = {key: payload.values.get(key, f"Sample {key.replace('_', ' ')}") for key in placeholders}
-    html = render_template_source(row.template_source, values, row.cleanup_rules_json)
-    return TemplatePreviewResponse(html=html, placeholders=placeholders)
+    diagnostics = render_template_source_with_diagnostics(row.template_source, values, row.cleanup_rules_json)
+    return TemplatePreviewResponse(html=diagnostics.html, raw_html=diagnostics.raw_html, placeholders=placeholders, missing_placeholders=diagnostics.missing_placeholders, unreplaced_placeholders=diagnostics.unreplaced_placeholders, cleanup_warnings=diagnostics.cleanup_warnings)
+
+
+@app.post("/api/admin/templates/{template_id}/preview-html", response_model=TemplatePreviewResponse)
+def preview_template_html(template_id: str, payload: TemplatePreviewRequest, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> TemplatePreviewResponse:
+    return preview_template(template_id, payload, db, _)
+
+
+@app.post("/api/admin/templates/{template_id}/preview-pdf")
+def preview_template_pdf(template_id: str, payload: TemplatePreviewRequest, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> Response:
+    preview = preview_template(template_id, payload, db, _)
+    return Response(content=html_to_pdf_bytes(preview.html), media_type="application/pdf")
+
+
+@app.get("/api/admin/config-change-log", response_model=list[ConfigChangeLogOut])
+def config_change_log(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[ConfigChangeLog]:
+    return db.query(ConfigChangeLog).order_by(ConfigChangeLog.changed_at.desc()).limit(200).all()
+
+
+@app.post("/api/admin/reset-defaults/{group}")
+def reset_admin_defaults(group: str, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> dict:
+    from .admin_defaults import DEFAULT_APP_SETTINGS, DEFAULT_BILLING_RULES, DEFAULT_CLASSIFICATION_RULES
+
+    if group == "billing-rules":
+        for key, value in DEFAULT_BILLING_RULES.items():
+            row = db.query(BillingRule).filter(BillingRule.rule_key == key).first()
+            previous = _snapshot(row) if row else None
+            if row:
+                row.rule_value_json = value
+                row.version = (row.version or 1) + 1
+                row.updated_by = user.email
+            else:
+                row = BillingRule(rule_key=key, rule_value_json=value, description=f"Default {key.replace('_', ' ')}", updated_by=user.email)
+                db.add(row)
+            _log_change(db, "billing_rule", key, previous, {"rule_value_json": value}, user)
+    elif group == "workflow-settings":
+        for key, value in DEFAULT_APP_SETTINGS.items():
+            row = db.query(AppSetting).filter(AppSetting.setting_key == key).first()
+            previous = _snapshot(row) if row else None
+            if row:
+                row.setting_value_json = value
+                row.version = (row.version or 1) + 1
+                row.updated_by = user.email
+            else:
+                row = AppSetting(setting_key=key, setting_value_json=value, description=f"Default {key.replace('_', ' ')}", updated_by=user.email)
+                db.add(row)
+            _log_change(db, "app_setting", key, previous, {"setting_value_json": value}, user)
+    elif group == "classification-rules":
+        previous = {"count": db.query(ClassificationRule).count()}
+        db.query(ClassificationRule).delete()
+        for category, keyword in DEFAULT_CLASSIFICATION_RULES:
+            db.add(ClassificationRule(category=category, keyword_or_pattern=keyword, updated_by=user.email))
+        _log_change(db, "classification_rule", "reset", previous, {"count": len(DEFAULT_CLASSIFICATION_RULES)}, user)
+    else:
+        raise HTTPException(status_code=404, detail="Unknown defaults group")
+    db.commit()
+    return {"message": f"{group} reset to defaults"}
