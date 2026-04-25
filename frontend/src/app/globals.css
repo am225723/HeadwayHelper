@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f7f5ef;
+  color: #17201b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f7f5ef;
+  color: #17201b;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.focus-ring:focus-visible {
+  outline: 3px solid rgba(216, 96, 65, 0.45);
+  outline-offset: 2px;
+}
