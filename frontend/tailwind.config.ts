@@ -7,12 +7,17 @@ const config: Config = {
       colors: {
         ink: "#17201b",
         paper: "#f7f5ef",
-        moss: "#3f6f5a",
-        clinic: "#d86041",
-        line: "#d8d4c8"
+        cream: "#fbfaf6",
+        moss: "#315f4c",
+        sage: "#eaf2ed",
+        clay: "#c96f55",
+        amber: "#a46b1f",
+        line: "#ddd8cc",
+        muted: "#766f64"
       },
       boxShadow: {
-        soft: "0 18px 45px rgba(23, 32, 27, 0.12)"
+        soft: "0 18px 45px rgba(23, 32, 27, 0.10)",
+        card: "0 10px 28px rgba(23, 32, 27, 0.07)"
       }
     }
   },

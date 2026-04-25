@@ -14,8 +14,11 @@
 
 body {
   margin: 0;
-  background: #f7f5ef;
+  background:
+    radial-gradient(circle at top left, rgba(49, 95, 76, 0.08), transparent 30rem),
+    #f7f5ef;
   color: #17201b;
+  font-feature-settings: "ss01" on, "cv01" on;
 }
 
 button,
@@ -24,7 +27,11 @@ textarea {
   font: inherit;
 }
 
+select {
+  font: inherit;
+}
+
 .focus-ring:focus-visible {
-  outline: 3px solid rgba(216, 96, 65, 0.45);
+  outline: 3px solid rgba(49, 95, 76, 0.24);
   outline-offset: 2px;
 }
