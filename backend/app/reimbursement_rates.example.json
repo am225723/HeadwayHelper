@@ -1,0 +1,11 @@
+{
+  "_note": "Replace these nulls with exact reimbursement-sheet values before production billing. The app intentionally refuses reimbursement ranking when rates are missing.",
+  "Aetna": {},
+  "Anthem Blue Cross and Blue Shield Connecticut": {},
+  "Carelon Behavioral Health": {},
+  "Cigna": {},
+  "Oscar (Optum)": {},
+  "Oxford (Optum)": {},
+  "Quest Behavioral Health": {},
+  "United Healthcare (Optum)": {}
+}

@@ -25,3 +25,13 @@ def test_auth_patient_flow():
     assert created.status_code == 201
     patients = client.get("/api/patients", headers=headers)
     assert patients.status_code == 200
+
+
+def test_auth_role_restrictions():
+    suffix = uuid4().hex
+    password = "long-password"
+    client.post("/api/auth/register", json={"email": f"provider-{suffix}@example.com", "password": password, "role": "PROVIDER"})
+    login = client.post("/api/auth/login", json={"email": f"provider-{suffix}@example.com", "password": password})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    response = client.post("/api/patients", json={"name": "Blocked", "drive_folder_id": f"folder-{suffix}"}, headers=headers)
+    assert response.status_code == 403

@@ -5,12 +5,16 @@ from sqlalchemy.orm import Session, selectinload
 from .auth import create_access_token, get_current_user, hash_password, require_roles, verify_password
 from .config import get_settings
 from .database import Base, engine, get_db
-from .drive import grouped_sources, sync_patient_files
-from .generation import create_billing_for_output, generate_session_note, generate_summary, generate_treatment_plan
-from .models import BillingSummary, DocumentType, OutputDocument, OutputStatus, Patient, ReviewStatus, ReviewStatusValue, Role, SourceDocument, User
+from .billing import BillingInput, psychiatric_evaluation_comparison
+from .drive import get_drive_service, grouped_sources, sync_all_patient_folders, sync_patient_files
+from .generation import create_billing_for_output, dispatch_new_sources, generate_session_note, generate_summary, generate_treatment_plan
+from .models import BillingSummary, DocumentType, FileType, OutputDocument, OutputStatus, Patient, ReviewStatus, ReviewStatusValue, Role, SourceDocument, User
+from .pdf import html_to_pdf_bytes
 from .schemas import (
     BillingRecalculateRequest,
     BillingSummaryOut,
+    BillingComparisonResponse,
+    ClassificationUpdate,
     GenerateResponse,
     GenerateSessionNoteRequest,
     GenerateSummaryRequest,
@@ -117,7 +121,19 @@ def resync_patient(patient_id: str, payload: LocalResyncRequest | None = None, d
     patient = patient_or_404(db, patient_id)
     files = [item.model_dump() for item in (payload.files if payload else [])]
     created = sync_patient_files(db, patient, files)
-    return {"message": "Resync started", "created": len(created)}
+    outputs = dispatch_new_sources(db, patient, created)
+    return {"message": "Resync completed", "created": len(created), "outputs": len(outputs)}
+
+
+@app.patch("/api/source-documents/{source_id}/classification", response_model=PatientDetail)
+def update_classification(source_id: str, payload: ClassificationUpdate, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> Patient:
+    source = db.get(SourceDocument, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source document not found")
+    source.file_type = payload.file_type
+    source.processed = False
+    db.commit()
+    return patient_or_404(db, source.patient_id)
 
 
 @app.post("/api/patients/{patient_id}/generate/summary", response_model=GenerateResponse, status_code=202)
@@ -155,8 +171,7 @@ def download_output(output_id: str, db: Session = Depends(get_db), _: User = Dep
     output = db.get(OutputDocument, output_id)
     if not output:
         raise HTTPException(status_code=404, detail="Output document not found")
-    pseudo_pdf = f"%PDF-1.4\n% Clinical AI export\n{output.content}\n%%EOF\n"
-    return Response(content=pseudo_pdf.encode(), media_type="application/pdf")
+    return Response(content=html_to_pdf_bytes(output.content), media_type="application/pdf")
 
 
 @app.get("/api/patients/{patient_id}/billing/latest", response_model=BillingSummaryOut)
@@ -182,9 +197,30 @@ def recalculate_billing(patient_id: str, payload: BillingRecalculateRequest, db:
         raise HTTPException(status_code=404, detail="Output document not found")
     db.query(BillingSummary).filter(BillingSummary.output_document_id == output.id).delete()
     billing = create_billing_for_output(db, patient, output)
+    if not billing:
+        raise HTTPException(status_code=400, detail="Billing fields are incomplete and require clinician/admin confirmation")
     db.commit()
     db.refresh(billing)
     return billing
+
+
+@app.get("/api/patients/{patient_id}/billing/psych-eval-comparison", response_model=list[BillingComparisonResponse])
+def psych_eval_comparison(patient_id: str, output_document_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> list[dict]:
+    patient = patient_or_404(db, patient_id)
+    output = db.get(OutputDocument, output_document_id) if output_document_id else None
+    data = output.structured_data if output and output.structured_data else {}
+    return psychiatric_evaluation_comparison(
+        BillingInput(
+            patient_name=patient.name,
+            date_of_service=__import__("datetime").date.today(),
+            service_name="Psychiatric Evaluation",
+            icd10_codes=data.get("icd10_codes") or ["UNCONFIRMED"],
+            psychotherapy_minutes=int(data.get("psychotherapy_minutes") or 60),
+            em_level=data.get("em_level") or "99205",
+            has_medical_decision_making=bool(data.get("has_medical_decision_making", True)),
+            is_new_patient=True,
+        )
+    )
 
 
 @app.post("/api/outputs/{output_id}/review")
@@ -217,5 +253,13 @@ def review_queue(db: Session = Depends(get_db), _: User = Depends(require_roles(
 
 @app.post("/api/admin/drive-sync", status_code=202)
 def admin_drive_sync(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> dict:
-    count = db.query(Patient).count()
-    return {"message": "Sync started", "patients": count}
+    drive = get_drive_service()
+    created = sync_all_patient_folders(db, drive)
+    by_patient: dict[str, list[SourceDocument]] = {}
+    for source in created:
+        by_patient.setdefault(source.patient_id, []).append(source)
+    outputs = 0
+    for patient_id, sources in by_patient.items():
+        patient = patient_or_404(db, patient_id)
+        outputs += len(dispatch_new_sources(db, patient, sources, drive=drive))
+    return {"message": "Sync completed", "created": len(created), "outputs": outputs}

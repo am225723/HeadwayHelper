@@ -4,13 +4,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Activity, Clipboard, FilePlus2, RefreshCw, Search } from "lucide-react";
 import { LoginPanel } from "@/components/login-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { apiFetch, BillingSummary, Patient } from "@/lib/api";
+import { apiFetch, BillingComparison, BillingSummary, Patient, SourceDocument } from "@/lib/api";
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingSummary | null>(null);
+  const [comparison, setComparison] = useState<BillingComparison[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +38,16 @@ export default function Home() {
   const selected = patients.find((patient) => patient.id === selectedId) || null;
   const filtered = useMemo(() => patients.filter((patient) => patient.name.toLowerCase().includes(query.toLowerCase())), [patients, query]);
 
+  useEffect(() => {
+    if (!token || !selectedId) return;
+    apiFetch<BillingComparison[]>(`/patients/${selectedId}/billing/psych-eval-comparison`, token)
+      .then(setComparison)
+      .catch(() => setComparison([]));
+    apiFetch<BillingSummary>(`/patients/${selectedId}/billing/latest`, token)
+      .then(setBilling)
+      .catch(() => setBilling(null));
+  }, [token, selectedId]);
+
   async function createPatient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
@@ -59,6 +70,7 @@ export default function Home() {
     } catch {
       setBilling(null);
     }
+    setComparison(await apiFetch<BillingComparison[]>(`/patients/${selected.id}/billing/psych-eval-comparison`, token));
   }
 
   async function resyncDemoFiles() {
@@ -75,6 +87,20 @@ export default function Home() {
     });
     const patient = await apiFetch<Patient>(`/patients/${selected.id}`, token);
     setPatients((items) => items.map((item) => (item.id === patient.id ? patient : item)));
+  }
+
+  async function updateClassification(source: SourceDocument, fileType: string) {
+    if (!token) return;
+    const patient = await apiFetch<Patient>(`/source-documents/${source.id}/classification`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ file_type: fileType })
+    });
+    setPatients((items) => items.map((item) => (item.id === patient.id ? patient : item)));
+  }
+
+  function billingCodesOnly() {
+    if (!billing) return "";
+    return `ICD-10 Codes: ${billing.icd10_codes}\nCPT Codes: ${billing.cpt_codes}`;
   }
 
   return (
@@ -146,7 +172,16 @@ export default function Home() {
                     {selected.source_documents.map((source) => (
                       <div key={source.id} className="flex items-center justify-between gap-3 rounded-md border border-line p-3">
                         <span className="min-w-0 truncate">{source.name}</span>
-                        <StatusBadge value={source.file_type} />
+                        <select
+                          className="focus-ring rounded-md border border-line bg-white px-2 py-1 text-sm"
+                          value={source.file_type}
+                          onChange={(event) => updateClassification(source, event.target.value)}
+                        >
+                          <option>INTAKE</option>
+                          <option>ASSESSMENT</option>
+                          <option>ZOOM_NOTE</option>
+                          <option>UNKNOWN</option>
+                        </select>
                       </div>
                     ))}
                     {!selected.source_documents.length ? <Empty text="No source documents synced yet." /> : null}
@@ -188,15 +223,46 @@ export default function Home() {
               <Panel title="Billing Summary">
                 {billing ? (
                   <div className="grid gap-3">
-                    <div className="rounded-md border border-line bg-paper p-3 text-sm">{billing.headway_block}</div>
-                    <button onClick={() => navigator.clipboard.writeText(billing.headway_block)} className="focus-ring inline-flex w-fit items-center gap-2 rounded-md border border-line bg-white px-4 py-2 font-semibold">
-                      <Clipboard size={16} />
-                      Copy Headway block
-                    </button>
+                    <pre className="whitespace-pre-wrap rounded-md border border-line bg-paper p-3 text-sm">{billing.headway_block}</pre>
+                    <div className="flex flex-wrap gap-2">
+                      <CopyButton text={billing.headway_block} label="Copy Billing Summary" />
+                      <CopyButton text={billingCodesOnly()} label="Copy ICD/CPT Only" />
+                      <CopyButton text={`${billing.headway_block}\n\n${JSON.stringify(billing.reimbursement_notes, null, 2)}`} label="Copy All Fields" />
+                    </div>
                   </div>
                 ) : (
-                  <Empty text="Generate a session note to create billing." />
+                  <Empty text="Billing requires confirmed service, diagnosis, minutes, and reimbursement rates." />
                 )}
+              </Panel>
+
+              <Panel title="Psychiatric Evaluation Comparison">
+                <div className="overflow-auto">
+                  <table className="w-full min-w-[760px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-line text-left">
+                        <th className="py-2">Payer</th>
+                        <th>90792</th>
+                        <th>E/M + add-on</th>
+                        <th>Difference</th>
+                        <th>Recommendation</th>
+                        <th>Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparison.map((row) => (
+                        <tr key={row.payer} className="border-b border-line">
+                          <td className="py-2 font-semibold">{row.payer}</td>
+                          <td>{formatMoney(row.option_a_total)}</td>
+                          <td>{formatMoney(row.option_b_total)}</td>
+                          <td>{formatMoney(row.difference)}</td>
+                          <td>{row.recommendation}</td>
+                          <td className="text-stone-600">{row.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!comparison.length ? <Empty text="Generate or select a patient to compare evaluation billing options." /> : null}
+                </div>
               </Panel>
             </div>
           ) : (
@@ -219,4 +285,18 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 function Empty({ text }: { text: string }) {
   return <div className="rounded-md border border-dashed border-line bg-white/60 p-6 text-center text-sm text-stone-500">{text}</div>;
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  return (
+    <button onClick={() => navigator.clipboard.writeText(text)} className="focus-ring inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 font-semibold">
+      <Clipboard size={16} />
+      {label}
+    </button>
+  );
+}
+
+function formatMoney(value: number | null) {
+  if (value === null) return "Needs rates";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }

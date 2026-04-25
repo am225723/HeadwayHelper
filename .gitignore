@@ -1,7 +1,10 @@
 .DS_Store
+.git/
+__MACOSX/
 .env
 *.db
 __pycache__/
+*.pyc
 .pytest_cache/
 node_modules/
 .next/

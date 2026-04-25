@@ -1,5 +1,9 @@
+import json
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
+
+from .config import get_settings
 
 
 ALLOWED_CPT_CODES = {
@@ -23,12 +27,16 @@ ALLOWED_CPT_CODES = {
     "99215",
 }
 
-DEFAULT_REIMBURSEMENT = {
-    "Aetna": {"90792": 210, "99205": 250, "99215": 180, "99214": 145, "90838": 150, "90837": 170, "90836": 118, "90834": 125, "90833": 82, "90832": 90, "90839": 210, "90840": 95},
-    "Anthem": {"90792": 220, "99205": 245, "99215": 175, "99214": 140, "90838": 160, "90837": 175, "90836": 120, "90834": 130, "90833": 85, "90832": 92, "90839": 215, "90840": 98},
-    "Cigna": {"90792": 205, "99205": 240, "99215": 170, "99214": 138, "90838": 145, "90837": 165, "90836": 112, "90834": 120, "90833": 80, "90832": 88, "90839": 205, "90840": 90},
-    "United/Optum": {"90792": 200, "99205": 235, "99215": 168, "99214": 135, "90838": 148, "90837": 162, "90836": 110, "90834": 118, "90833": 78, "90832": 86, "90839": 200, "90840": 88},
-}
+APPROVED_PAYERS = [
+    "Aetna",
+    "Anthem Blue Cross and Blue Shield Connecticut",
+    "Carelon Behavioral Health",
+    "Cigna",
+    "Oscar (Optum)",
+    "Oxford (Optum)",
+    "Quest Behavioral Health",
+    "United Healthcare (Optum)",
+]
 
 
 @dataclass(frozen=True)
@@ -72,11 +80,25 @@ def crisis_codes(minutes: int) -> list[str]:
 
 
 def _rate(payer: str, code: str) -> float:
-    return float(DEFAULT_REIMBURSEMENT.get(payer, DEFAULT_REIMBURSEMENT["Aetna"]).get(code.replace("-25", ""), 0))
+    rates = load_reimbursement_table()
+    value = rates.get(payer, {}).get(code.replace("-25", ""))
+    if value is None:
+        raise ValueError(f"Missing reimbursement value for {payer} {code.replace('-25', '')}")
+    return float(value)
 
 
 def _total(payer: str, codes: list[str]) -> float:
     return sum(_rate(payer, code) for code in codes)
+
+
+def load_reimbursement_table() -> dict[str, dict[str, float]]:
+    path = Path(get_settings().reimbursement_table_path)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[1] / path
+    if not path.exists():
+        return {payer: {} for payer in APPROVED_PAYERS}
+    raw = json.loads(path.read_text())
+    return {payer: {code: amount for code, amount in raw.get(payer, {}).items() if amount is not None} for payer in APPROVED_PAYERS}
 
 
 def select_cpt_codes(data: BillingInput) -> BillingResult:
@@ -111,15 +133,20 @@ def select_cpt_codes(data: BillingInput) -> BillingResult:
     if not candidates:
         return _result(data, [], {"error": "No supported CPT code from documented service"}, "No supported CPT code from documented service")
 
-    ranked = sorted(candidates, key=lambda codes: _total(data.payer, codes), reverse=True)
-    return _result(data, ranked[0], _notes(data, candidates))
+    try:
+        ranked = sorted(candidates, key=lambda codes: _total(data.payer, codes), reverse=True)
+        notes = _notes(data, candidates)
+    except ValueError as exc:
+        return _result(data, [], {"error": str(exc)}, str(exc))
+    return _result(data, ranked[0], notes)
 
 
 def _notes(data: BillingInput, candidates: list[list[str]]) -> dict:
     rows = []
     for codes in candidates:
         rows.append({"codes": codes, "payer": data.payer, "total": _total(data.payer, codes)})
-    return {"candidates": sorted(rows, key=lambda row: row["total"], reverse=True), "recommended": rows[0] if rows else None}
+    sorted_rows = sorted(rows, key=lambda row: row["total"], reverse=True)
+    return {"candidates": sorted_rows, "recommended": sorted_rows[0] if sorted_rows else None}
 
 
 def _result(data: BillingInput, codes: list[str], notes: dict, incomplete: str | None = None) -> BillingResult:
@@ -136,7 +163,42 @@ def _result(data: BillingInput, codes: list[str], notes: dict, incomplete: str |
 
 def create_headway_block(patient_name: str, dos: date, service_name: str, icd10_codes: list[str], cpt_codes: list[str], minutes: int) -> str:
     return (
-        f"Patient Name: {patient_name} | Date of Service: {dos:%m/%d/%Y} | "
-        f"Service Name: {service_name} | ICD-10 Codes: {', '.join(icd10_codes)} | "
-        f"CPT Codes: {', '.join(cpt_codes)} | Length of Psychotherapy: {minutes} minutes"
+        f"Patient Name: {patient_name}\n"
+        f"Date of Service: {dos:%m/%d/%Y}\n"
+        f"Service Name: {service_name}\n"
+        f"ICD-10 Codes: {', '.join(icd10_codes)}\n"
+        f"CPT Codes: {', '.join(cpt_codes)}\n"
+        f"Length of Psychotherapy: {minutes} minutes"
     )
+
+
+def psychiatric_evaluation_comparison(data: BillingInput) -> list[dict]:
+    add_on = psychotherapy_code(data.psychotherapy_minutes, with_em=True)
+    em = data.em_level or "99205"
+    option_a = ["90792"]
+    option_b = [f"{em}-25", add_on] if add_on else [em]
+    rows: list[dict] = []
+    for payer in APPROVED_PAYERS:
+        try:
+            a_total = _total(payer, option_a)
+            b_total = _total(payer, option_b)
+            diff = b_total - a_total
+            recommendation = "Option B" if diff > 0 else "Option A"
+            reason = "Higher reimbursement with documented E/M and psychotherapy add-on." if diff > 0 else "90792 is equal or higher for this payer."
+        except ValueError as exc:
+            a_total = b_total = diff = None
+            recommendation = "Needs rate configuration"
+            reason = str(exc)
+        rows.append(
+            {
+                "payer": payer,
+                "option_a_total": a_total,
+                "option_b_total": b_total,
+                "difference": diff,
+                "option_a_codes": option_a,
+                "option_b_codes": option_b,
+                "recommendation": recommendation,
+                "reason": reason,
+            }
+        )
+    return rows

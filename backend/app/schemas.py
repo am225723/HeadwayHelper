@@ -51,7 +51,9 @@ class OutputDocumentOut(BaseModel):
     drive_file_id: str | None
     summary_id: str | None
     session_note_id: str | None
+    source_document_id: str | None
     content: str
+    structured_data: dict | None
     created_at: datetime
     status: str
     error_message: str | None
@@ -145,3 +147,18 @@ class DriveFileIn(BaseModel):
 
 class LocalResyncRequest(BaseModel):
     files: list[DriveFileIn] = []
+
+
+class ClassificationUpdate(BaseModel):
+    file_type: str = Field(pattern="^(INTAKE|ASSESSMENT|ZOOM_NOTE|UNKNOWN)$")
+
+
+class BillingComparisonResponse(BaseModel):
+    payer: str
+    option_a_total: float | None
+    option_b_total: float | None
+    difference: float | None
+    option_a_codes: list[str]
+    option_b_codes: list[str]
+    recommendation: str
+    reason: str

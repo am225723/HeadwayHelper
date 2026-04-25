@@ -14,6 +14,7 @@ export type OutputDocument = {
   status: string;
   created_at: string;
   content: string;
+  structured_data: Record<string, unknown> | null;
 };
 
 export type Patient = {
@@ -32,6 +33,17 @@ export type BillingSummary = {
   psychotherapy_minutes: number;
   headway_block: string;
   reimbursement_notes: { candidates?: { codes: string[]; total: number; payer: string }[] } | null;
+};
+
+export type BillingComparison = {
+  payer: string;
+  option_a_total: number | null;
+  option_b_total: number | null;
+  difference: number | null;
+  option_a_codes: string[];
+  option_b_codes: string[];
+  recommendation: string;
+  reason: string;
 };
 
 export async function apiFetch<T>(path: string, token: string | null, options: RequestInit = {}): Promise<T> {
