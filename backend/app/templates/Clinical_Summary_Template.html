@@ -1,16 +1,451 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>Clinical Summary</h1>
-    <p><strong>Patient:</strong> {{patient_name}}</p>
-    <p><strong>Date:</strong> {{date_of_service}}</p>
-    <h2>Presenting Concerns</h2>
-    <p>{{presenting_concerns}}</p>
-    <h2>Assessment Results</h2>
-    <p>{{assessment_results}}</p>
-    <h2>Diagnostic Impressions</h2>
-    <p>{{diagnostic_impressions}}</p>
-    <h2>Recommendations</h2>
-    <p>{{recommendations}}</p>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pre-Intake Clinical Summary - Integrative Psychiatry</title>
+    <style>
+        /* --- CORE TYPOGRAPHY & COLORS --- */
+        /* Primary Purple: #3b0764, Secondary Purple: #6b21a8, Prompt: #555555, Light Purple: #faf5ff, Border: #cccccc */
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #fff;
+        }
+
+        /* --- PDF PRINT SETUP --- */
+        @page {
+            size: letter;
+            margin: 0.2in;
+        }
+
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+            .no-break {
+                page-break-inside: avoid;
+            }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 825px;
+            margin: 0 auto;
+            padding: 0;
+        }
+
+        .bold {
+            font-weight: bold;
+        }
+
+        .ai-prompt {
+            color: #555555;
+            font-style: italic;
+        }
+
+        /* --- SYSTEM INSTRUCTIONS BOX --- */
+        .system-instructions-box {
+            background-color: #f3e8ff; /* subtle purple-gray tint */
+            border: 1px solid #d8b4fe;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+
+        /* --- TYPOGRAPHY --- */
+        h1.section-title {
+            font-size: 13pt;
+            color: #3b0764;
+            border-bottom: 2px solid #6b21a8;
+            padding-bottom: 4px;
+            margin-top: 20px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+
+        h2.subsection-title {
+            font-size: 11pt;
+            color: #3b0764;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-top: 0;
+            margin-bottom: 8px;
+        }
+
+        /* --- HIGHLIGHT BLOCKS --- */
+        .highlight-block {
+            background-color: #faf5ff; 
+            border-left: 4px solid #3b0764; 
+            padding-top: 10px;
+            padding-bottom: 10px;
+            padding-left: 15px;
+            padding-right: 15px;
+            margin-bottom: 15px;
+            font-size: 9.5pt;
+        }
+
+        .highlight-item {
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .highlight-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .highlight-label {
+            font-weight: bold;
+            color: #3b0764;
+            margin-right: 5px;
+        }
+        
+        /* --- SAFETY ALERT BLOCK --- */
+        .alert-block {
+            background-color: #fff5f5;
+            border-left: 4px solid #e53e3e;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            font-size: 9.5pt;
+        }
+        
+        .alert-label {
+            font-weight: bold;
+            color: #e53e3e;
+            margin-right: 5px;
+        }
+
+        /* --- TABLES INSIDE BLOCKS --- */
+        .internal-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9.5pt;
+        }
+        
+        .internal-table td {
+            padding: 4px 0;
+            vertical-align: top;
+        }
+        
+        .internal-table td.label-col {
+            font-weight: bold;
+            color: #3b0764;
+            width: 25%;
+        }
+
+        hr.divider {
+            border: 0;
+            border-top: 1px solid #cccccc;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <!-- COMPRESSED PROPORTIONED HEADER -->
+        <table width="100%" style="border: none; margin-bottom: 8px; padding: 0;">
+            <tr>
+                <!-- LEFT SIDE: Logo -->
+                <td style="width: 30%; text-align: left; vertical-align: bottom; border: none; padding: 0;">
+                    <img src="https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png" alt="Integrative Psychiatry Logo" width="160" style="display: block;" onerror="this.style.display='none'">
+                </td>
+
+                <!-- RIGHT SIDE: Text -->
+                <td style="width: 70%; text-align: right; vertical-align: bottom; border: none; padding: 0;">
+                    <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #3b0764; line-height: 0.9; margin-bottom: 4px; letter-spacing: 0.5px;">
+                        <span style="font-size: 22pt; font-weight: 900;">I</span><span style="font-size: 16pt; font-weight: 900;">NTEGRATIVE</span><br>
+                        <span style="font-size: 22pt; font-weight: 900;">P</span><span style="font-size: 16pt; font-weight: 900;">SYCHIATRY</span>
+                    </div>
+                    <div style="font-size: 9.5pt; font-weight: bold; color: #6b21a8; margin-bottom: 2px;">
+                        Clinical Summary System
+                    </div>
+                    <div style="font-size: 8pt; color: #555; line-height: 1.2; margin-bottom: 6px;">
+                        45 South Main Street Suite 111, West Hartford, CT 06107<br>
+                        P: 860.615.3629 &nbsp;|&nbsp; F: 860.318.2085 &nbsp;|&nbsp; E: support@drzelisko.com
+                    </div>
+                    <div style="font-size: 11pt; font-weight: bold; color: #333; text-transform: uppercase; margin-bottom: 0;">
+                        PRE-INTAKE CLINICAL SUMMARY
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- PATIENT INFO BOX -->
+        <table width="100%" style="background-color: #faf5ff; border-collapse: collapse; border: none; margin-bottom: 20px;">
+            <tr>
+                <td style="padding-top: 8px; padding-bottom: 8px; padding-left: 15px; padding-right: 15px; border: none;">
+                    <table width="100%" style="border-collapse: collapse; border: none; line-height: 1.1;">
+                        <tr>
+                            <td style="width: 16%; font-weight: bold; color: #3b0764; padding-bottom: 4px; border: none;">Patient Name:</td>
+                            <td style="width: 34%; padding-bottom: 4px; border: none;">$$PATIENT_NAME$$</td>
+                            <td style="width: 16%; font-weight: bold; color: #3b0764; padding-bottom: 4px; border: none;">DOB:</td>
+                            <td style="width: 34%; padding-bottom: 4px; border: none;">$$DOB_MMDDYYYY$$</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold; color: #3b0764; padding-bottom: 0; border: none;">Client ID:</td>
+                            <td style="padding-bottom: 0; border: none;">$$CLIENT_ID$$</td>
+                            <td style="font-weight: bold; color: #3b0764; padding-bottom: 0; border: none;">Prepared For:</td>
+                            <td style="padding-bottom: 0; border: none;">$$PROVIDER_NAME$$</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- SECTION 0 & 1: SYSTEM PROMPT & TONE -->
+        <div class="system-instructions-box no-break ai-prompt">
+            <h2 style="font-size: 11pt; color: #3b0764; margin-top: 0; border-bottom: 1px solid #d8b4fe; padding-bottom: 5px;">System Prompt: PsychCheck Consultant</h2>
+            <p><span class="bold">Core Mandate:</span> Provide Tier-1 psychiatric intake preparation by generating a highly detailed, clinically neutral, insurance-aware Pre-Intake Clinical Summary for psychiatrist review prior to first encounter. Prioritize safety screening, differential diagnosis framing, medication/safety checks, and documentation readiness.</p>
+            <p><span class="bold">Rules:</span> Use only provided intake materials. Never fabricate, infer, soften, or embellish. If absent, write "Not documented". Preserve contradictions explicitly. No conversational tone, no first person, no AI/meta language. Distinguish Subjective vs Objective data. Do NOT use Unicode psychiatric symbols; use words "Diagnosis," "Prescription," and "Psychiatry".</p>
+            <p style="margin-bottom: 0;"><span class="bold">Clinical Standards:</span> Use precise phenomenology (e.g., "labile affect", "pressured speech"). Prioritize Duty to Warn, access to lethal means, intoxication/withdrawal, grave disability, and medical mimics.</p>
+        </div>
+
+        <!-- URGENT SAFETY ALERT -->
+        <div class="alert-block no-break">
+            <div class="highlight-item"><span class="alert-label">URGENT SAFETY ALERT: ACUTE RISK DETECTED</span></div>
+            <div class="highlight-item"><span class="ai-prompt">[AI: Insert exact verbatim acute-risk trigger quotes if present; otherwise "Not documented."]</span></div>
+            <div class="highlight-item"><span class="alert-label">Trigger Quotes:</span></div>
+            <div class="highlight-item">1) "$$RISK_TRIGGER_QUOTE_1$$"</div>
+            <div class="highlight-item">2) "$$RISK_TRIGGER_QUOTE_2$$"</div>
+        </div>
+
+        <!-- SECTION 2 -->
+        <h1 class="section-title">2. The Intake Briefing</h1>
+        
+        <div class="no-break">
+            <h2 class="subsection-title">2.1 Chief Complaint (Verbatim)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Extract direct patient quote regarding reason for visit. STRICT RULE: Do not alter quote. If none, output "Not documented."]</span></div>
+                <div class="highlight-item"><span class="highlight-label">Verbatim:</span> "$$CC_VERBATIM$$"</div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">2.2 Chief Complaint (Clinical Framing)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Provide 1-2 sentence clinical framing of the chief complaint. Do not invent onset/duration. If no detail is available, use: "Presents for initial psychiatric evaluation for anxiety-related symptoms and functional distress."]</span></div>
+                <div class="highlight-item">$$CC_CLINICAL_SUMMARY_12_SENTENCES$$</div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">2.3 History of Present Illness (HPI) - Compiled Narrative</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Dense narrative for session prep. MUST include (if documented): context/reason for visit, onset and course, symptom clusters, triggers/context, functional impairment, somatic correlates, prior treatment response, patient goals/preferences. Maintain strict Subjective framing. Include "Objective: Not documented" if no objective data exists. Permitted fallback: "Symptoms reported as persistent over time." Do not include diagnostic conclusions.]</span></div>
+                <div class="highlight-item" style="margin-top: 8px;">$$HPI_COMPILED_NARRATIVE$$</div>
+            </div>
+        </div>
+
+        <!-- SECTION 3 -->
+        <h1 class="section-title">3. Scoring Engine (Structured Extraction)</h1>
+        <div class="no-break">
+            <div class="highlight-block">
+                <div class="highlight-item" style="margin-bottom: 10px;"><span class="ai-prompt">[AI: Extract scales exactly as documented. Do not calculate totals, do not infer severity labels. If scoring is inconsistent or unclear, flag in Integrity Flags.]</span></div>
+                <table class="internal-table">
+                    <tr>
+                        <td class="label-col">PHQ-9 Score:</td>
+                        <td>$$PHQ9_SCORE$$</td>
+                        <td class="label-col">PHQ-9 Severity:</td>
+                        <td>$$PHQ9_SEVERITY$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">GAD-7 Score:</td>
+                        <td>$$GAD7_SCORE$$</td>
+                        <td class="label-col">GAD-7 Severity:</td>
+                        <td>$$GAD7_SEVERITY$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">ASRS/ADHD Tool:</td>
+                        <td>$$ADHD_SCALE_NAME$$</td>
+                        <td class="label-col">Result / Interpretation:</td>
+                        <td>$$ADHD_SCALE_RESULT$$|$$ADHD_SCALE_INTERPRETATION$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Other Scales:</td>
+                        <td>$$OTHER_SCALES_SUMMARY$$</td>
+                        <td class="label-col">Integrity Flags:</td>
+                        <td>$$SCORING_INCONSISTENCY_FLAGS$$</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- SECTION 4 -->
+        <h1 class="section-title">4. Compliance Check (Medical Necessity)</h1>
+        <div class="no-break">
+            <div class="highlight-block">
+                <div class="highlight-item" style="margin-bottom: 10px;"><span class="ai-prompt">[AI: Indicate "Yes - documented" only when explicitly supported. Otherwise use "No - not documented." Do not infer.]</span></div>
+                <table class="internal-table" style="margin-bottom: 12px;">
+                    <tr>
+                        <td class="label-col">Symptom burden:</td>
+                        <td>$$MN_SYMPTOMS_PRESENT$$</td>
+                        <td class="label-col">Functional impairment:</td>
+                        <td>$$MN_FUNCTIONAL_IMPAIRMENT_PRESENT$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Duration/course:</td>
+                        <td>$$MN_DURATION_PRESENT$$</td>
+                        <td class="label-col">Prior treatment response:</td>
+                        <td>$$MN_PRIOR_TX_PRESENT$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Risk/safety concerns:</td>
+                        <td>$$MN_RISK_PRESENT$$</td>
+                        <td class="label-col">Need med management:</td>
+                        <td>$$MN_MED_MGMT_PRESENT$$</td>
+                    </tr>
+                </table>
+                <div class="highlight-item"><span class="highlight-label">Compliance Summary:</span> <span class="ai-prompt">[AI: 3-8 sentences summarizing whether available intake data supports medical necessity and what missing documentation risks claim denial.]</span></div>
+                <div class="highlight-item">$$COMPLIANCE_SUMMARY$$</div>
+            </div>
+        </div>
+
+        <!-- SECTION 5 -->
+        <h1 class="section-title">5. Differential Hierarchy (Strict Rule-Out Order)</h1>
+        <p style="font-style: italic; color: #555; font-size: 9.5pt;">Complete tiers in order. Provide considerations only; do not assign final diagnoses. If insufficient data, write "Not documented".</p>
+        
+        <div class="no-break">
+            <h2 class="subsection-title">Tier 1: Organic / Medical Rule-Outs</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Organic/medical mimics relevant to the documented presentation only. Cite the specific documented clue(s).]</span></div>
+                <div class="highlight-item">$$DIFF_TIER1_ORGANIC_RULEOUTS$$</div>
+                <hr class="divider" style="margin: 10px 0;">
+                <div class="highlight-item"><span class="highlight-label">Tier 1 Add-On: Suggested Labs / Workup:</span> <span class="ai-prompt">[AI: Suggest conservative labs/workup only if justified. Otherwise: "Not documented / insufficient data to justify lab suggestions."]</span></div>
+                <div class="highlight-item">$$TIER1_SUGGESTED_LABS_WORKUP$$</div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Tier 2: Substance-Related / Iatrogenic Rule-Outs</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Substance/iatrogenic rule-outs. If absent, write exactly: "Substance use history not documented."]</span></div>
+                <div class="highlight-item">$$DIFF_TIER2_SUBSTANCE_IATROGENIC$$</div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Tier 3: Primary Psychiatric (DSM-5-TR-Framed, Preliminary)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Ranked primary psychiatric considerations mapping documented symptoms to criteria elements. Label as Provisional if criteria is incomplete.]</span></div>
+                <div class="highlight-item">$$DIFF_TIER3_PRIMARY_PSYCH_DSM_MAPPING$$</div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Tier 4: Personality / Characterologic Factors</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: Include only if supported by documented longitudinal/interpersonal pattern evidence. If insufficient: "Not documented/insufficient longitudinal data."]</span></div>
+                <div class="highlight-item">$$DIFF_TIER4_PERSONALITY_CHARACTER$$</div>
+            </div>
+        </div>
+
+        <!-- SECTION 6 -->
+        <h1 class="section-title">6. Pharmacology &amp; Safety (Pre-Prescribing Checklist)</h1>
+        
+        <div class="no-break">
+            <h2 class="subsection-title">Medication Snapshot</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="ai-prompt">[AI: List current psych meds, non-psych meds, supplements/OTC, and proposed meds. Include dose/freq if provided. If none: "Not documented."]</span></div>
+                <div class="highlight-item">$$PHARM_MED_SNAPSHOT$$</div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Interaction Check &amp; Safety Flags</h2>
+            <div class="highlight-block">
+                <div class="highlight-item" style="margin-bottom: 8px;"><span class="ai-prompt">[AI: Summarize whether interaction screening can be meaningfully performed. If insufficient detail, state that.]</span></div>
+                <div class="highlight-item" style="margin-bottom: 12px;">$$INTERACTION_TRAFFIC_LIGHT_SUMMARY$$</div>
+                
+                <table class="internal-table">
+                    <tr>
+                        <td class="label-col" style="color: #e53e3e;">RED (High concern):</td>
+                        <td>$$INTERACTION_RED_FLAGS$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col" style="color: #d69e2e;">YELLOW (Monitor/review):</td>
+                        <td>$$INTERACTION_YELLOW_FLAGS$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col" style="color: #38a169;">GREEN (No major issues):</td>
+                        <td>$$INTERACTION_GREEN_FLAGS$$</td>
+                    </tr>
+                    <tr><td colspan="2"><hr class="divider" style="margin: 8px 0;"></td></tr>
+                    <tr>
+                        <td class="label-col">CYP450 flags:</td>
+                        <td>$$CYP450_FLAGS$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">QTc flags:</td>
+                        <td>$$QTC_FLAGS$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Serotonin flags:</td>
+                        <td>$$SEROTONIN_FLAGS$$</td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Other safety flags:</td>
+                        <td>$$OTHER_PHARM_SAFETY_FLAGS$$</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Dosing Verification</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">FDA Max &amp; Maudsley Guidelines:</span> <span class="ai-prompt">[AI: Verify boundaries only if medication names and doses are explicitly provided. If not: "Not documented."]</span></div>
+                <div class="highlight-item">$$DOSING_BOUNDARY_CHECK_FDA_MAUDSLEY$$</div>
+            </div>
+        </div>
+
+        <!-- SECTION 7 -->
+        <h1 class="section-title">7. Gap List (Key Questions For Review)</h1>
+        <p style="font-style: italic; color: #555; font-size: 9.5pt;">Prioritized, targeted, clinically useful, and billing-supportive questions based on missing intake data.</p>
+        
+        <div class="no-break">
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Priority 1 (Safety / Acuity / Liability):</span></div>
+                <div class="highlight-item" style="margin-bottom: 10px;">$$GAPLIST_PRIORITY1_SAFETY_QUESTIONS$$</div>
+                
+                <div class="highlight-item"><span class="highlight-label">Priority 2 (Diagnostic Clarification / Rule-Outs):</span></div>
+                <div class="highlight-item" style="margin-bottom: 10px;">$$GAPLIST_PRIORITY2_DIAGNOSTIC_QUESTIONS$$</div>
+                
+                <div class="highlight-item"><span class="highlight-label">Priority 3 (Medication / Pharmacology Decision Support):</span></div>
+                <div class="highlight-item" style="margin-bottom: 10px;">$$GAPLIST_PRIORITY3_MED_QUESTIONS$$</div>
+
+                <div class="highlight-item"><span class="highlight-label">Priority 4 (Functional Impairment / Billing Support):</span></div>
+                <div class="highlight-item" style="margin-bottom: 10px;">$$GAPLIST_PRIORITY4_BILLING_QUESTIONS$$</div>
+
+                <div class="highlight-item"><span class="highlight-label">Priority 5 (Treatment Planning / Patient Preferences):</span></div>
+                <div class="highlight-item">$$GAPLIST_PRIORITY5_PREFERENCES_QUESTIONS$$</div>
+            </div>
+        </div>
+
+        <!-- SECTION 8 -->
+        <h1 class="section-title">8. Documentation Gaps &amp; Missing Information</h1>
+        <div class="no-break" style="margin-bottom: 40px;">
+            <div class="highlight-block" style="border-left-color: #6b21a8;">
+                <div class="highlight-item"><span class="ai-prompt">[AI: List only missing data that creates clinical safety risk, diagnostic ambiguity, or Headway/insurance denial risk. If none: "No critical documentation gaps identified from provided intake materials."]</span></div>
+                <div class="highlight-item" style="margin-top: 8px;">$$DOCUMENTATION_GAPS_MISSING_INFO$$</div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
 </html>

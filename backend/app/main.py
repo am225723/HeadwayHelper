@@ -3,18 +3,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, selectinload
 
 from .auth import create_access_token, get_current_user, hash_password, require_roles, verify_password
+from .admin_defaults import seed_admin_defaults
 from .config import get_settings
-from .database import Base, engine, get_db
+from .database import Base, SessionLocal, engine, get_db
 from .billing import BillingInput, psychiatric_evaluation_comparison
 from .drive import get_drive_service, grouped_sources, sync_all_patient_folders, sync_patient_files
 from .generation import create_billing_for_output, dispatch_new_sources, generate_session_note, generate_summary, generate_treatment_plan
-from .models import BillingSummary, DocumentType, FileType, OutputDocument, OutputStatus, Patient, ReviewStatus, ReviewStatusValue, Role, SourceDocument, User
+from .models import AppSetting, BillingRule, BillingSummary, ClassificationRule, DocumentTemplate, DocumentType, OutputDocument, OutputStatus, Patient, ReimbursementRate, ReviewStatus, ReviewStatusValue, Role, ServiceType, SourceDocument, User
 from .pdf import html_to_pdf_bytes
+from .templates import extract_placeholders, render_template_source
 from .schemas import (
+    AppSettingIn,
+    AppSettingOut,
     BillingRecalculateRequest,
+    BillingRuleIn,
+    BillingRuleOut,
     BillingSummaryOut,
     BillingComparisonResponse,
+    ClassificationRuleIn,
+    ClassificationRuleOut,
     ClassificationUpdate,
+    DocumentTemplateIn,
+    DocumentTemplateOut,
     GenerateResponse,
     GenerateSessionNoteRequest,
     GenerateSummaryRequest,
@@ -23,9 +33,15 @@ from .schemas import (
     PatientCreate,
     PatientDetail,
     PatientList,
+    ReimbursementRateIn,
+    ReimbursementRateOut,
     ReviewItem,
     ReviewRequest,
+    ServiceTypeIn,
+    ServiceTypeOut,
     SourceDocumentsResponse,
+    TemplatePreviewRequest,
+    TemplatePreviewResponse,
     Token,
     UserLogin,
     UserOut,
@@ -34,6 +50,11 @@ from .schemas import (
 
 
 Base.metadata.create_all(bind=engine)
+seed_db = SessionLocal()
+try:
+    seed_admin_defaults(seed_db)
+finally:
+    seed_db.close()
 settings = get_settings()
 app = FastAPI(title="Clinical AI Webapp", version="0.1.0")
 app.add_middleware(
@@ -263,3 +284,181 @@ def admin_drive_sync(db: Session = Depends(get_db), _: User = Depends(require_ro
         patient = patient_or_404(db, patient_id)
         outputs += len(dispatch_new_sources(db, patient, sources, drive=drive))
     return {"message": "Sync completed", "created": len(created), "outputs": outputs}
+
+
+def _template_out(row: DocumentTemplate) -> DocumentTemplateOut:
+    data = DocumentTemplateOut.model_validate(row)
+    data.placeholders = extract_placeholders(row.template_source)
+    return data
+
+
+@app.get("/api/admin/reimbursement-rates", response_model=list[ReimbursementRateOut])
+def list_reimbursement_rates(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[ReimbursementRate]:
+    return db.query(ReimbursementRate).order_by(ReimbursementRate.payer_name, ReimbursementRate.cpt_code).all()
+
+
+@app.post("/api/admin/reimbursement-rates", response_model=ReimbursementRateOut, status_code=201)
+def create_reimbursement_rate(payload: ReimbursementRateIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ReimbursementRate:
+    row = ReimbursementRate(**payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.put("/api/admin/reimbursement-rates/{rate_id}", response_model=ReimbursementRateOut)
+def update_reimbursement_rate(rate_id: str, payload: ReimbursementRateIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ReimbursementRate:
+    row = db.get(ReimbursementRate, rate_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Rate not found")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.delete("/api/admin/reimbursement-rates/{rate_id}")
+def delete_reimbursement_rate(rate_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> dict:
+    row = db.get(ReimbursementRate, rate_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Rate not found")
+    db.delete(row)
+    db.commit()
+    return {"message": "Rate deleted"}
+
+
+@app.get("/api/admin/billing-rules", response_model=list[BillingRuleOut])
+def list_billing_rules(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[BillingRule]:
+    return db.query(BillingRule).order_by(BillingRule.rule_key).all()
+
+
+@app.put("/api/admin/billing-rules/{rule_key}", response_model=BillingRuleOut)
+def upsert_billing_rule(rule_key: str, payload: BillingRuleIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> BillingRule:
+    row = db.query(BillingRule).filter(BillingRule.rule_key == rule_key).first()
+    if not row:
+        row = BillingRule(rule_key=rule_key, rule_value_json=payload.rule_value_json, description=payload.description)
+        db.add(row)
+    else:
+        row.rule_value_json = payload.rule_value_json
+        row.description = payload.description
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.get("/api/admin/service-types", response_model=list[ServiceTypeOut])
+def list_service_types(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[ServiceType]:
+    return db.query(ServiceType).order_by(ServiceType.display_order, ServiceType.name).all()
+
+
+@app.post("/api/admin/service-types", response_model=ServiceTypeOut, status_code=201)
+def create_service_type(payload: ServiceTypeIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ServiceType:
+    row = ServiceType(**payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.put("/api/admin/service-types/{service_type_id}", response_model=ServiceTypeOut)
+def update_service_type(service_type_id: str, payload: ServiceTypeIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ServiceType:
+    row = db.get(ServiceType, service_type_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Service type not found")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.get("/api/admin/classification-rules", response_model=list[ClassificationRuleOut])
+def list_classification_rules(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[ClassificationRule]:
+    return db.query(ClassificationRule).order_by(ClassificationRule.category, ClassificationRule.keyword_or_pattern).all()
+
+
+@app.post("/api/admin/classification-rules", response_model=ClassificationRuleOut, status_code=201)
+def create_classification_rule(payload: ClassificationRuleIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ClassificationRule:
+    row = ClassificationRule(**payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.put("/api/admin/classification-rules/{rule_id}", response_model=ClassificationRuleOut)
+def update_classification_rule(rule_id: str, payload: ClassificationRuleIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> ClassificationRule:
+    row = db.get(ClassificationRule, rule_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Classification rule not found")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.delete("/api/admin/classification-rules/{rule_id}")
+def delete_classification_rule(rule_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> dict:
+    row = db.get(ClassificationRule, rule_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Classification rule not found")
+    db.delete(row)
+    db.commit()
+    return {"message": "Classification rule deleted"}
+
+
+@app.get("/api/admin/settings", response_model=list[AppSettingOut])
+def list_settings(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[AppSetting]:
+    return db.query(AppSetting).order_by(AppSetting.setting_key).all()
+
+
+@app.put("/api/admin/settings/{setting_key}", response_model=AppSettingOut)
+def upsert_setting(setting_key: str, payload: AppSettingIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> AppSetting:
+    row = db.query(AppSetting).filter(AppSetting.setting_key == setting_key).first()
+    if not row:
+        row = AppSetting(setting_key=setting_key, setting_value_json=payload.setting_value_json, description=payload.description)
+        db.add(row)
+    else:
+        row.setting_value_json = payload.setting_value_json
+        row.description = payload.description
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.get("/api/admin/templates", response_model=list[DocumentTemplateOut])
+def list_templates(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[DocumentTemplateOut]:
+    return [_template_out(row) for row in db.query(DocumentTemplate).order_by(DocumentTemplate.document_type, DocumentTemplate.template_name).all()]
+
+
+@app.get("/api/admin/templates/{template_id}", response_model=DocumentTemplateOut)
+def get_template(template_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> DocumentTemplateOut:
+    row = db.get(DocumentTemplate, template_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return _template_out(row)
+
+
+@app.put("/api/admin/templates/{template_id}", response_model=DocumentTemplateOut)
+def update_template(template_id: str, payload: DocumentTemplateIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> DocumentTemplateOut:
+    row = db.get(DocumentTemplate, template_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return _template_out(row)
+
+
+@app.post("/api/admin/templates/{template_id}/preview", response_model=TemplatePreviewResponse)
+def preview_template(template_id: str, payload: TemplatePreviewRequest, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> TemplatePreviewResponse:
+    row = db.get(DocumentTemplate, template_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    placeholders = extract_placeholders(row.template_source)
+    values = {key: payload.values.get(key, f"Sample {key.replace('_', ' ')}") for key in placeholders}
+    html = render_template_source(row.template_source, values, row.cleanup_rules_json)
+    return TemplatePreviewResponse(html=html, placeholders=placeholders)

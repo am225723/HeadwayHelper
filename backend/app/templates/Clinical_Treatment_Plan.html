@@ -1,16 +1,442 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>Clinical Treatment Plan</h1>
-    <p><strong>Patient:</strong> {{patient_name}}</p>
-    <p><strong>Date:</strong> {{date_of_service}}</p>
-    <h2>Problems</h2>
-    <p>{{problems}}</p>
-    <h2>Goals</h2>
-    <p>{{goals}}</p>
-    <h2>Interventions</h2>
-    <p>{{interventions}}</p>
-    <h2>Progress Measures</h2>
-    <p>{{progress_measures}}</p>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinical Treatment Plan - Integrative Psychiatry</title>
+    <style>
+        /* --- CORE TYPOGRAPHY & COLORS --- */
+        /* Primary Green: #224b3c, Secondary Green: #5f8575, Prompt: #555555, Light: #f2f7f5, Border: #cccccc */
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #fff;
+        }
+
+        /* --- PDF PRINT SETUP --- */
+        @page {
+            size: letter;
+            margin: 0.2in;
+        }
+
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .no-break {
+                page-break-inside: avoid;
+            }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 825px;
+            margin: 0 auto;
+            padding: 0;
+        }
+
+        .bold {
+            font-weight: bold;
+        }
+
+        .ai-prompt {
+            color: #555555;
+            font-style: italic;
+        }
+
+        /* --- SYSTEM INSTRUCTIONS BOX --- */
+        .system-instructions-box {
+            background-color: #edf2f7;
+            border: 1px solid #cbd5e0;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+
+        /* --- TYPOGRAPHY --- */
+        h1.section-title {
+            font-size: 13pt;
+            color: #224b3c;
+            border-bottom: 2px solid #5f8575;
+            padding-bottom: 4px;
+            margin-top: 20px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+
+        h2.subsection-title {
+            font-size: 11pt;
+            color: #224b3c;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-top: 0;
+            margin-bottom: 8px;
+        }
+
+        /* --- HIGHLIGHT BLOCKS --- */
+        .highlight-block {
+            background-color: #f2f7f5; 
+            border-left: 4px solid #224b3c; 
+            padding-top: 10px;
+            padding-bottom: 10px;
+            padding-left: 15px;
+            padding-right: 15px;
+            margin-bottom: 15px;
+            font-size: 9.5pt;
+        }
+
+        .highlight-item {
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .highlight-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .highlight-label {
+            font-weight: bold;
+            color: #224b3c;
+            margin-right: 5px;
+        }
+
+        /* --- SIGNATURE SECTION --- */
+        .signature-section {
+            margin-top: 25px;
+            margin-bottom: 25px;
+        }
+
+        .signature-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .signature-table td {
+            width: 48%;
+            vertical-align: bottom;
+        }
+
+        .sig-line {
+            border-bottom: 1px solid #000;
+            height: 50px;
+            margin-bottom: 5px;
+        }
+        
+        .sig-name {
+            font-weight: bold;
+            font-size: 11pt;
+        }
+
+        .sig-date {
+            margin-top: 5px;
+            font-size: 10pt;
+        }
+
+        hr.divider {
+            border: 0;
+            border-top: 1px solid #cccccc;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <!-- PERFECTLY PROPORTIONED HEADER -->
+        <table width="100%" style="border: none; margin-bottom: 12px; padding: 0;">
+            <tr>
+                <!-- LEFT SIDE: Logo -->
+                <td style="width: 60%; text-align: left; vertical-align: bottom; border: none; padding: 0;">
+                    <img src="https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png" alt="Integrative Psychiatry Logo" width="190" style="display: block;" onerror="this.style.display='none'">
+                </td>
+
+                <!-- RIGHT SIDE: Text -->
+                <td style="width: 70%; text-align: right; vertical-align: bottom; border: none; padding: 0;">
+                    <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #224b3c; line-height: 0.95; margin-bottom: 6px; letter-spacing: 0.5px;">
+                        <span style="font-size: 26pt; font-weight: 900;">I</span><span style="font-size: 20pt; font-weight: 900;">NTEGRATIVE</span><br>
+                        <span style="font-size: 26pt; font-weight: 900;">P</span><span style="font-size: 20pt; font-weight: 900;">SYCHIATRY</span>
+                    </div>
+                    <div style="font-size: 10pt; font-weight: bold; color: #5f8575; margin-bottom: 4px;">
+                        Douglas Zelisko, M. D.
+                    </div>
+                    <div style="font-size: 10pt; font-weight: bold; color: #5f8575; margin-bottom: 4px;">
+                        Board Certified Psychiatrist
+                    </div>
+                    <div style="font-size: 8.5pt; color: #555; line-height: 1.3; margin-bottom: 10px;">
+                        45 South Main Street Suite 111, West Hartford, CT 06107<br>
+                        P: 860.615.3629 &nbsp;|&nbsp; F: 860.318.2085 &nbsp;|&nbsp; E: support@drzelisko.com
+                    </div>
+                    <div style="font-size: 12pt; font-weight: bold; color: #333; text-transform: uppercase; margin-bottom: 0;">
+                        CLINICAL TREATMENT PLAN
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- PATIENT INFO BOX -->
+        <table width="100%" style="background-color: #f2f7f5; border-collapse: collapse; border: none; margin-bottom: 20px;">
+            <tr>
+                <td style="padding-top: 8px; padding-bottom: 8px; padding-left: 15px; padding-right: 15px; border: none;">
+                    <table width="100%" style="border-collapse: collapse; border: none; line-height: 1.1;">
+                        <tr>
+                            <td style="width: 15%; font-weight: bold; color: #224b3c; padding-bottom: 3px; border: none;">Patient Name:</td>
+                            <td style="width: 35%; padding-bottom: 3px; border: none;"><span class="ai-prompt">Extract Patient Name</span></td>
+                            <td style="width: 15%; font-weight: bold; color: #224b3c; padding-bottom: 3px; border: none;">DOB:</td>
+                            <td style="width: 35%; padding-bottom: 3px; border: none;"><span class="ai-prompt">Extract DOB format MM-DD-YYYY</span></td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold; color: #224b3c; padding-bottom: 3px; border: none;">Client ID:</td>
+                            <td style="padding-bottom: 3px; border: none;">{{client_id}}</td>
+                            <td style="font-weight: bold; color: #224b3c; padding-bottom: 3px; border: none;">Date of Service:</td>
+                            <td style="padding-bottom: 3px; border: none;">{{date_of_service}}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold; color: #224b3c; padding-bottom: 0; border: none;">ICD-10:</td>
+                            <td style="padding-bottom: 0; border: none;"><span class="ai-prompt">Insert ICD-10 Codes</span></td>
+                            <td style="font-weight: bold; color: #224b3c; padding-bottom: 0; border: none;">Prescriptions Ordered:</td>
+                            <td style="padding-bottom: 0; border: none;"><span class="ai-prompt">Insert Prescriptions Ordered</span></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- GLOBAL AI SYSTEM INSTRUCTIONS -->
+        <div class="system-instructions-box no-break ai-prompt">
+            <h2 style="font-size: 11pt; color: #224b3c; margin-top: 0; border-bottom: 1px solid #cbd5e0; padding-bottom: 5px;">System Instructions: Treatment Plan Generation</h2>
+            <p>Transform raw psychiatric evaluation data into a structured Clinical Treatment Plan using the exact extraction logic below. Generate short, concise details for each key. <span class="bold">Crucial Rule:</span> If requested information is Not Documented in the provided text, delete that entire line/item from the final output.</p>
+        </div>
+
+        <!-- SECTION 1 -->
+        <h1 class="section-title">1. Clinical Brief &amp; Synthesis</h1>
+        
+        <div class="no-break">
+            <h2 class="subsection-title">Chief Complaint</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Verbatim:</span> <span class="ai-prompt">Extract direct quote from patient regarding reason for visit. STRICT RULE: Do not alter quote. If no exact quote is present, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Clinical:</span> <span class="ai-prompt">Provide a concise 1-2 sentence clinical summary synthesizing the chief complaint and primary presentation. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">History of Present Illness (HPI)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Narrative (Subjective):</span> <span class="ai-prompt">Generate a highly detailed narrative in the subjective voice. MUST include: precise onset, symptom chronicity, episodic vs. continuous nature, specific triggers, somatic correlates, prior treatment responses, exacerbating/alleviating factors, and patient goals. Structure logically by symptom cluster. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Pertinent Positives &amp; Negatives:</span> <span class="ai-prompt">Explicitly list pertinent clinical positives and negatives relevant to the chief complaint to establish medical necessity and refine differential diagnosis. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Functional Impact Domains:</span> <span class="ai-prompt">Explicitly detail impairment levels across key domains: work/school performance, interpersonal relationships, ADLs (Activities of Daily Living), and sleep architecture. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Context / Stressors:</span> <span class="ai-prompt">List acute or chronic psychosocial stressors (e.g., job loss, divorce, housing instability, financial strain). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Clinical Brief / One-Paragraph Synthesis:</span> <span class="ai-prompt">Synthesize a high-yield 3-5 sentence clinical snapshot strictly from the HPI, Risk Assessment, and Primary Diagnosis. Do not introduce new information here. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <!-- SECTION 2 -->
+        <h1 class="section-title">2. Detailed Review of Systems &amp; Symptoms</h1>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Psychiatric Review of Systems</h2>
+            <p style="font-style: italic; color: #555; font-size: 9.5pt;">Evaluate presence/absence, severity, and chronicity of the following domains:</p>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Depression (SIGECAPS):</span> <span class="ai-prompt">Evaluate mood, anhedonia, guilt/worthlessness, energy levels, concentration, appetite shifts, psychomotor changes, and suicidality. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Anxiety (WATCHERS):</span> <span class="ai-prompt">Evaluate generalized worry, panic attacks (frequency/duration), somatic tension, autonomic arousal, and specific phobias. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">OCD &amp; Tic Disorders:</span> <span class="ai-prompt">Evaluate presence of intrusive ego-dystonic obsessions, compensatory compulsions, time spent on rituals, and motor/vocal tics. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Trauma/Stressor-related:</span> <span class="ai-prompt">Evaluate nightmares, flashbacks, dissociation, hypervigilance, avoidance behaviors, and exaggerated startle response. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Mania/Hypomania (DIGFAST):</span> <span class="ai-prompt">Evaluate distractibility, indiscretion, grandiosity, flight of ideas, activity increase, sleep deficit, and talkativeness. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Psychosis:</span> <span class="ai-prompt">Evaluate auditory/visual/olfactory hallucinations, paranoid/grandiose/bizarre delusions, and thought broadcasting/insertion. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Eating / Body Image:</span> <span class="ai-prompt">Evaluate restrictive eating, binge/purge cycles, body dysmorphia, and excessive exercise. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Sleep Architecture:</span> <span class="ai-prompt">Evaluate initial/middle/terminal insomnia, hypersomnia, sleep apnea risk (snoring, gasping), and restless legs. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Attention/Executive (ADHD):</span> <span class="ai-prompt">Evaluate sustained focus, working memory, task initiation/completion, losing items, and hyperactivity/fidgeting. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Symptom Inventory (Subjective Breakdown)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Cognitive:</span> <span class="ai-prompt">Extract poor concentration, memory deficits, brain fog, etc. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Affective:</span> <span class="ai-prompt">Extract depressed mood, irritability, worthlessness, emotional lability. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Neurovegetative:</span> <span class="ai-prompt">Extract insomnia, severe fatigue, appetite changes, libido changes. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Psychomotor:</span> <span class="ai-prompt">Extract subjective reports of physical restlessness or severe slowing. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Interpersonal:</span> <span class="ai-prompt">Extract social withdrawal, frequent conflict, deliberate isolation. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Substance Use &amp; Addiction</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Alcohol:</span> <span class="ai-prompt">Detail current/past use, specific frequency/quantity, age of first use, longest sobriety, and withdrawal history. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Cannabis:</span> <span class="ai-prompt">Detail use (THC/CBD ratio if known), frequency, method (flower, vape, edible), and impact on motivation/anxiety. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Nicotine/Vaping:</span> <span class="ai-prompt">Detail use, specific frequency, delivery system, and readiness to quit. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Caffeine:</span> <span class="ai-prompt">Detail use, specific frequency, source, and impact on sleep/anxiety. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Illicit Substances:</span> <span class="ai-prompt">Detail use of stimulants, opiates, hallucinogens, benzos. List frequency, route of administration, and last use. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">MAT / Recovery:</span> <span class="ai-prompt">Detail involvement in 12-step programs, SMART recovery, or use of Medication-Assisted Treatment. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Consequences:</span> <span class="ai-prompt">Detail negative functional, legal (DUI), interpersonal, or physiological consequences of use. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Family History:</span> <span class="ai-prompt">Detail first and second-degree family history of substance use disorders. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <!-- SECTION 3 -->
+        <h1 class="section-title">3. Impressions, History &amp; Reasoning</h1>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Psychiatric, Medical &amp; Social History</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Psychiatric History:</span> <span class="ai-prompt">Detail prior DSM diagnoses, age of onset, previous providers, and most severe past episode. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Therapy History:</span> <span class="ai-prompt">Detail past therapy modalities (CBT, DBT, EMDR), duration, and specific outcomes or reasons for termination. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Trauma History:</span> <span class="ai-prompt">Detail specific trauma history (ACEs, singular events, systemic trauma) with appropriate clinical sensitivity. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Hospitalizations &amp; IOP/PHP:</span> <span class="ai-prompt">Detail past inpatient psychiatric hospitalizations, intensive outpatient, or partial hospitalization programs with dates. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Medical/Surgical:</span> <span class="ai-prompt">Detail chronic medical conditions (e.g., thyroid, cardiac, metabolic), known allergies (with reaction type), and surgeries. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Social &amp; Developmental History:</span> <span class="ai-prompt">Detail birthplace, upbringing, highest education level, military history, legal history, current occupation, and relationship status. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Family History:</span> <span class="ai-prompt">Detail first-degree family history of mental illness, suicides, or severe medical issues (e.g., cardiac history relevant to stimulants/antipsychotics). If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Current Medications</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Psychiatric Medications:</span> <span class="ai-prompt">Format: [Medication Name], [Dose], [Frequency/Route]. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Non-Psychiatric Medications:</span> <span class="ai-prompt">Format: [Medication Name], [Dose], [Frequency]. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Supplements / OTC:</span> <span class="ai-prompt">Format: [Supplement Name], [Dose], [Frequency]. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Adherence / Side Effects:</span> <span class="ai-prompt">Detail adherence compliance levels or reported side effects. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Mental Status Examination (OBJECTIVE)</h2>
+            <p style="font-style: italic; color: #555; font-size: 9.5pt;">Strictly objective clinical observations. No subjective patient quotes.</p>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Appearance:</span> <span class="ai-prompt">Grooming, hygiene, dress (e.g., disheveled, meticulous), posture, eye contact (e.g., avoidant, piercing, appropriate), apparent vs. stated age. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Behavior/Motor:</span> <span class="ai-prompt">Psychomotor agitation/retardation, abnormal movements (EPS, tardive dyskinesia, tics, tremors), gait, and cooperativeness/rapport. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Speech:</span> <span class="ai-prompt">Rate (e.g., pressured, slowed), rhythm, volume, tone, articulation (e.g., dysarthric, spontaneous, impoverished). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Mood:</span> <span class="ai-prompt">Patient's stated mood (this is the sole exception for subjective reporting, preferably enclosed in quotes). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Affect:</span> <span class="ai-prompt">Range (e.g., full, restricted, blunted, flat), congruency to mood/topic, stability (e.g., labile, stable), and reactivity. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Thought Process:</span> <span class="ai-prompt">Associations (e.g., logical, goal-directed, circumstantial, tangential, loose associations, flight of ideas, thought blocking). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Thought Content:</span> <span class="ai-prompt">Presence/absence of SI/HI, pervasive delusions (grandiose, paranoid, somatic), phobias, obsessions, magical thinking. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Perception:</span> <span class="ai-prompt">Evidence of auditory/visual/tactile/olfactory hallucinations, illusions, depersonalization, or derealization. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Cognition &amp; Sensorium:</span> <span class="ai-prompt">Alertness, gross memory (immediate, recent, remote), concentration (serial 7s), orientation (x4), fund of knowledge. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Insight:</span> <span class="ai-prompt">Awareness of illness, need for treatment, and consequences of actions. Rate strictly as: Good, Fair, Poor, or Absent. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Judgment:</span> <span class="ai-prompt">Ability to make sound decisions and solve problems. Rate strictly as: Good, Fair, Poor, or Impaired. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Impulse Control:</span> <span class="ai-prompt">Ability to regulate urges. Rate strictly as Good, Fair, or Poor based on observed behavior and recent history. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Risk Assessment (MANDATORY)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Suicidality:</span> <span class="ai-prompt">Document presence/absence of intent, plan, timeframe, preparatory acts. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Homicidality / Violence:</span> <span class="ai-prompt">Document presence/absence of intent, plan, specific targets. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Self-Harm:</span> <span class="ai-prompt">Document NSSI (Non-Suicidal Self-Injury) severity and frequency. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Access to Means:</span> <span class="ai-prompt">State explicitly if patient has access to firearms, lethal meds, etc. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Abuse / Vulnerability:</span> <span class="ai-prompt">Document potential for neglect, grave disability, or elder/child abuse. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Risk Factors:</span> <span class="ai-prompt">List specific static/dynamic factors (e.g., living alone, severe substance use). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Protective Factors:</span> <span class="ai-prompt">List specific factors (e.g., supportive family, religious beliefs, pets). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Overall Acute Risk:</span> <span class="ai-prompt">Assign strictly: LOW, MODERATE, or HIGH, followed by a 1-sentence clinical justification.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Safety Plan:</span> <span class="ai-prompt">If risk is moderate/high, detail the specific if-then safety plan strategies discussed. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <!-- SECTION 4 -->
+        <h1 class="section-title">4. Proposed Treatment Strategy</h1>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Assessment &amp; Diagnosis</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">DSM-5-TR Diagnosis &amp; Specifiers:</span> <span class="ai-prompt">MUST include exact DSM-5-TR nomenclature and all relevant clinical specifiers (e.g., with mixed features, mild/moderate/severe). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">ICD-10 Code:</span> <span class="ai-prompt">Include specific alphanumeric billing code. Output 'Excluded' if not supported. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Justification:</span> <span class="ai-prompt">Provide 2-5 sentences directly linking specific patient symptoms to DSM diagnostic criteria. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Differential Considerations:</span> <span class="ai-prompt">Briefly list organic, substance-induced, or other psychiatric conditions ruled out. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Treatment Goals &amp; Objectives</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Goal 1 (SMART):</span> <span class="ai-prompt">Link to Primary Diagnosis. State Long-term goal, 2-4 Short-term measurable objectives, specific Interventions, and Target Date. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Goal 2 (SMART):</span> <span class="ai-prompt">Link to Secondary Diagnosis/Symptom. State Goals, measurable objectives, interventions, and Target Date. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Care Coordination:</span> <span class="ai-prompt">Detail plans to coordinate care with PCP, therapist, or specialists (e.g., "ROI signed, will fax notes to Dr. Smith"). If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Medical Decision Making (MDM)</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Problems:</span> <span class="ai-prompt">Complexity/number of problems addressed (e.g., '1 acute uncomplicated illness'). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Data:</span> <span class="ai-prompt">Amount/complexity of data reviewed (e.g., 'Reviewed PHQ-9, old records'). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Risk:</span> <span class="ai-prompt">Risk of complications/morbidity (e.g., 'Prescription drug management - Moderate risk'). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Selected E/M Level:</span> <span class="ai-prompt">Output exactly one: 99213/99214/99215 (Established) OR 99203/99204/99205 (New). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Coding Rationale:</span> <span class="ai-prompt">3-6 sentences linking the Problems, Data, and Risk to strictly justify the chosen E/M code. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Psychotherapy Add-On</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Modality:</span> <span class="ai-prompt">Identify theoretical framework (e.g., CBT, Supportive, Interpersonal). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Time Spent:</span> <span class="ai-prompt">Total exact minutes face-to-face providing psychotherapy. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Focus:</span> <span class="ai-prompt">Specific symptoms, relational patterns, or cognitive distortions addressed. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Interventions:</span> <span class="ai-prompt">Specific psychological techniques utilized during the session. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Response:</span> <span class="ai-prompt">Patient's receptiveness, insight, and engagement during therapy. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Prescription Plan &amp; Medical Interventions</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Initiated:</span> <span class="ai-prompt">New medications prescribed, exact dose, frequency, route, titration schedule, and specific target symptoms. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Continued:</span> <span class="ai-prompt">Current medications maintained, exact dose, compliance check, and clinical rationale. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Discontinued:</span> <span class="ai-prompt">Medications stopped, precise cross-taper or washout plan, and clinical rationale (e.g., side effects, lack of efficacy). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Monitoring/Safety:</span> <span class="ai-prompt">Specific physiological side effect monitoring (e.g., EPS, metabolic syndrome, BP) and behavioral monitoring instructions given to patient. If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Pharmacogenomics:</span> <span class="ai-prompt">Note any GeneSight or similar testing reviewed or ordered, and how it impacts the current medication choices. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <div class="no-break">
+            <h2 class="subsection-title">Labs / Testing</h2>
+            <div class="highlight-block">
+                <div class="highlight-item"><span class="highlight-label">Labs Ordered:</span> <span class="ai-prompt">Specific tests ordered (e.g., CMP, TSH, Lipid Panel). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Indication:</span> <span class="ai-prompt">Clinical rationale for testing (e.g., baseline metabolic panel for SGA initiation). If not documented, remove this entire line.</span></div>
+                <div class="highlight-item"><span class="highlight-label">Follow-up:</span> <span class="ai-prompt">Timeline and method for how results will be reviewed with patient. If not documented, remove this entire line.</span></div>
+            </div>
+        </div>
+
+        <!-- SIGNATURE SECTION -->
+        <div class="signature-section no-break">
+            <hr class="divider">
+            
+            <h1 class="section-title" style="border:none; text-align:center; padding-bottom: 0;">Informed Consent &amp; Agreement</h1>
+            
+            <p style="font-size: 9.5pt; margin-bottom: 15px;"><span class="bold">Consent Documentation:</span> The provider discussed the diagnostic impressions, proposed treatment plan, and risks/benefits/alternatives of medications. <span class="ai-prompt">Document Telehealth consent, treatment consent, specific risks/benefits discussed, and patient's expressed understanding. If not documented, remove this entire line.</span></p>
+
+            <table class="signature-table">
+                <tr>
+                    <td>
+                        <div class="sig-line">
+                            <img src="https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/dzsignature.png" alt="Dr. Zelisko Signature" width="230" height="50" style="margin-bottom: -5px; display: block;" onerror="this.style.display='none'">
+                        </div>
+                        <div class="sig-name">Douglas Zelisko, M.D.</div>
+                        <div class="sig-date">Date: {{date_of_service}}</div>
+                    </td>
+                    <td style="width: 4%;">&nbsp;</td>
+                    <td>
+                        <div class="sig-line" style="border-bottom: 1px solid transparent;">&nbsp;</div>
+                        <div class="sig-name">Verbal Consent Obtained via Telehealth</div>
+                        <div class="sig-date">Date: {{date_of_service}}</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+    </div>
+
+</body>
 </html>

@@ -8,7 +8,7 @@ from .billing import BillingInput, select_cpt_codes
 from .drive import DriveClient, get_drive_service, mark_processed
 from .models import BillingSummary, DocumentType, FileType, OutputDocument, OutputStatus, Patient, ProcessingRun, SourceDocument
 from .pdf import html_to_pdf_bytes
-from .templates import extract_placeholders, load_template, render_template
+from .templates import active_template, extract_placeholders, render_template
 
 
 def get_summary_sources(db: Session, patient_id: str) -> list[SourceDocument]:
@@ -59,10 +59,10 @@ def create_output(
     source_document_id: str | None = None,
     drive: DriveClient | None = None,
 ) -> OutputDocument:
-    template = load_template(doc_type)
+    template, _ = active_template(db, doc_type)
     placeholders = extract_placeholders(template)
     structured = get_ai_provider().generate_structured(doc_type, patient, sources, placeholders)
-    html = render_template(doc_type, structured)
+    html = render_template(doc_type, structured, db=db)
     pdf_bytes = html_to_pdf_bytes(html)
     drive_file_id = None
     if save_pdf:

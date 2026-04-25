@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -170,3 +170,75 @@ class ReviewStatus(Base):
 
     output_document: Mapped[OutputDocument] = relationship(back_populates="review_statuses")
     reviewer: Mapped[User] = relationship(back_populates="reviews")
+
+
+class ReimbursementRate(Base):
+    __tablename__ = "reimbursement_rates"
+    __table_args__ = (Index("ix_reimbursement_rates_payer_cpt", "payer_name", "cpt_code"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    payer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    cpt_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class BillingRule(Base):
+    __tablename__ = "billing_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    rule_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    rule_value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class ServiceType(Base):
+    __tablename__ = "service_types"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class ClassificationRule(Base):
+    __tablename__ = "classification_rules"
+    __table_args__ = (Index("ix_classification_rules_category", "category"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    keyword_or_pattern: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    setting_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    setting_value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+    __table_args__ = (Index("ix_document_templates_type_active", "document_type", "is_active"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    document_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    template_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    template_source: Mapped[str] = mapped_column(Text, nullable=False)
+    placeholder_style: Mapped[str] = mapped_column(String(50), nullable=False)
+    cleanup_rules_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)

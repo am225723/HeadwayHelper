@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -31,7 +32,8 @@ import {
 } from "lucide-react";
 import { LoginPanel } from "@/components/login-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { apiFetch, BillingComparison, BillingSummary, Patient, SourceDocument } from "@/lib/api";
+import { AdminConfig, BillingComparison, BillingSummary, CurrentUser, Patient, SourceDocument, apiFetch } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 
 type GenerateFn = (path: string, body: object) => Promise<void>;
 
@@ -43,6 +45,8 @@ export default function Home() {
   const [comparison, setComparison] = useState<BillingComparison[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
 
   useEffect(() => {
     setToken(localStorage.getItem("clinical-ai-token"));
@@ -53,7 +57,10 @@ export default function Home() {
     setError(null);
     try {
       const data = await apiFetch<{ items: Patient[] }>("/patients", nextToken);
+      const user = await apiFetch<CurrentUser>("/me", nextToken);
       setPatients(data.items);
+      setCurrentUser(user);
+      if (user.role === "ADMIN") setAdminConfig(await loadAdminConfig(nextToken));
       if (!selectedId && data.items[0]) setSelectedId(data.items[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load patients");
@@ -162,10 +169,23 @@ export default function Home() {
           ) : (
             <EmptyWorkspaceState />
           )}
+          {currentUser?.role === "ADMIN" && adminConfig && token ? <AdminSettingsPanel config={adminConfig} token={token} onConfig={setAdminConfig} /> : null}
         </section>
       </section>
     </main>
   );
+}
+
+async function loadAdminConfig(token: string): Promise<AdminConfig> {
+  const [rates, billingRules, serviceTypes, classificationRules, settings, templates] = await Promise.all([
+    apiFetch<AdminConfig["rates"]>("/admin/reimbursement-rates", token),
+    apiFetch<AdminConfig["billingRules"]>("/admin/billing-rules", token),
+    apiFetch<AdminConfig["serviceTypes"]>("/admin/service-types", token),
+    apiFetch<AdminConfig["classificationRules"]>("/admin/classification-rules", token),
+    apiFetch<AdminConfig["settings"]>("/admin/settings", token),
+    apiFetch<AdminConfig["templates"]>("/admin/templates", token)
+  ]);
+  return { rates, billingRules, serviceTypes, classificationRules, settings, templates };
 }
 
 function AppHeader({ pendingReviewCount, patientCount, signedIn }: { pendingReviewCount: number; patientCount: number; signedIn: boolean }) {
@@ -398,7 +418,7 @@ function QuickActionsCard({ patient, billing, onGenerate, onResync }: { patient:
         <ActionButton tone="primary" icon={<NotebookPen size={16} />} subtext={zoom ? "From selected Zoom note" : "Needs Zoom note"} disabled={!zoom} onClick={() => zoom && onGenerate(`/patients/${patient.id}/generate/session-note`, { source_document_id: zoom.id, save_pdf: false })}>Draft session note</ActionButton>
         <ActionButton tone="secondary" icon={<Layers3 size={16} />} subtext="Summary + latest note" onClick={() => onGenerate(`/patients/${patient.id}/generate/treatment-plan`, { save_pdf: false })}>Generate treatment plan</ActionButton>
         <ActionButton tone="secondary" onClick={onResync} icon={<RefreshCw size={16} />} subtext="Pull Drive changes">Resync files</ActionButton>
-        <ActionButton tone="accent" disabled={!billing} onClick={() => billing && navigator.clipboard.writeText(billing.headway_block)} icon={<Clipboard size={16} />} subtext="Headway-ready block">Copy billing summary</ActionButton>
+        <ActionButton tone="accent" disabled={!billing} onClick={() => billing && copyToClipboard(billing.headway_block)} icon={<Clipboard size={16} />} subtext="Headway-ready block">Copy billing summary</ActionButton>
       </div>
     </Card>
   );
@@ -542,6 +562,258 @@ function ReimbursementComparisonCard({ rows }: { rows: BillingComparison[] }) {
   );
 }
 
+function AdminSettingsPanel({ config, token, onConfig }: { config: AdminConfig; token: string; onConfig: (config: AdminConfig) => void }) {
+  const activeRates = config.rates.filter((rate) => rate.is_active);
+  const inactiveRates = config.rates.length - activeRates.length;
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function refresh(nextMessage?: string) {
+    onConfig(await loadAdminConfig(token));
+    setMessage(nextMessage || null);
+  }
+
+  async function saveRate(event: FormEvent<HTMLFormElement>, rateId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch(`/admin/reimbursement-rates/${rateId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({
+        payer_name: form.get("payer_name"),
+        cpt_code: form.get("cpt_code"),
+        amount: Number(form.get("amount") || 0),
+        is_active: form.get("is_active") === "on",
+        notes: form.get("notes") || null
+      })
+    });
+    await refresh("Rate saved.");
+  }
+
+  async function createRate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch("/admin/reimbursement-rates", token, {
+      method: "POST",
+      body: JSON.stringify({
+        payer_name: form.get("payer_name"),
+        cpt_code: form.get("cpt_code"),
+        amount: Number(form.get("amount") || 0),
+        is_active: true,
+        notes: form.get("notes") || null
+      })
+    });
+    event.currentTarget.reset();
+    await refresh("Rate added.");
+  }
+
+  async function saveServiceType(event: FormEvent<HTMLFormElement>, serviceTypeId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch(`/admin/service-types/${serviceTypeId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: form.get("name"),
+        display_order: Number(form.get("display_order") || 0),
+        is_active: form.get("is_active") === "on"
+      })
+    });
+    await refresh("Service type saved.");
+  }
+
+  async function createServiceType(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch("/admin/service-types", token, {
+      method: "POST",
+      body: JSON.stringify({
+        name: form.get("name"),
+        display_order: Number(form.get("display_order") || 0),
+        is_active: true
+      })
+    });
+    event.currentTarget.reset();
+    await refresh("Service type added.");
+  }
+
+  async function saveClassificationRule(event: FormEvent<HTMLFormElement>, ruleId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch(`/admin/classification-rules/${ruleId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({
+        category: form.get("category"),
+        keyword_or_pattern: form.get("keyword_or_pattern"),
+        is_active: form.get("is_active") === "on"
+      })
+    });
+    await refresh("Classification rule saved.");
+  }
+
+  async function createClassificationRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch("/admin/classification-rules", token, {
+      method: "POST",
+      body: JSON.stringify({
+        category: form.get("category"),
+        keyword_or_pattern: form.get("keyword_or_pattern"),
+        is_active: true
+      })
+    });
+    event.currentTarget.reset();
+    await refresh("Classification rule added.");
+  }
+
+  return (
+    <div className="mt-5 grid gap-5">
+      <Card className="border-moss/20 bg-gradient-to-br from-white to-sage/60">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <SectionHeader eyebrow="Admin controls" title="Backend-owned configuration" subtitle="Rates, coding rules, service types, classification, workflow settings, and templates are loaded from backend admin APIs." />
+          <span className="inline-flex items-center gap-2 rounded-full border border-moss/20 bg-white px-3 py-2 text-xs font-bold text-moss shadow-sm">
+            <Settings2 size={14} />
+            Admin only
+          </span>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Rate rows" value={`${config.rates.length} total`} />
+          <Metric label="Active rates" value={`${activeRates.length} active`} />
+          <Metric label="Inactive placeholders" value={`${inactiveRates} need rates`} />
+          <Metric label="Templates" value={`${config.templates.length} registered`} />
+        </div>
+        {message ? <div className="mt-4 rounded-2xl border border-moss/20 bg-white px-4 py-3 text-sm font-semibold text-moss shadow-sm">{message}</div> : null}
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <AdminRatesEditor rates={config.rates} onCreate={createRate} onSave={saveRate} />
+        <AdminServiceTypesEditor serviceTypes={config.serviceTypes} onCreate={createServiceType} onSave={saveServiceType} />
+        <AdminClassificationEditor rules={config.classificationRules} onCreate={createClassificationRule} onSave={saveClassificationRule} />
+        <AdminMiniTable
+          title="Billing rules"
+          subtitle="CPT allowlists, modifier logic, and thresholds."
+          rows={config.billingRules.map((rule) => [rule.rule_key, JSON.stringify(rule.rule_value_json).slice(0, 64), rule.description || ""])}
+        />
+        <AdminMiniTable
+          title="Template registry"
+          subtitle="Production HTML templates and placeholder metadata."
+          rows={config.templates.map((template) => [template.document_type, template.template_name, `${template.placeholders.length} placeholders`])}
+        />
+        <AdminMiniTable
+          title="Workflow settings"
+          subtitle="Autosave, review, Drive scan, and default payer settings."
+          rows={config.settings.map((setting) => [setting.setting_key, JSON.stringify(setting.setting_value_json).slice(0, 64), setting.description || ""])}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AdminRatesEditor({ rates, onCreate, onSave }: { rates: AdminConfig["rates"]; onCreate: (event: FormEvent<HTMLFormElement>) => Promise<void>; onSave: (event: FormEvent<HTMLFormElement>, rateId: string) => Promise<void> }) {
+  return (
+    <Card>
+      <SectionHeader title="Reimbursement rates" subtitle="Edit backend payer/CPT values used by billing recommendations." />
+      <form onSubmit={onCreate} className="mt-4 grid gap-2 rounded-2xl border border-line bg-cream p-3 sm:grid-cols-[1fr_120px_100px_auto]">
+        <input name="payer_name" required placeholder="Payer name" className="admin-input" />
+        <input name="cpt_code" required placeholder="CPT" className="admin-input" />
+        <input name="amount" required type="number" min="0" step="0.01" placeholder="Amount" className="admin-input" />
+        <button className="rounded-xl bg-moss px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Add rate</button>
+      </form>
+      <div className="mt-4 grid max-h-[430px] gap-2 overflow-auto pr-1">
+        {rates.slice(0, 18).map((rate) => (
+          <form key={rate.id} onSubmit={(event) => onSave(event, rate.id)} className="grid gap-2 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm sm:grid-cols-[1fr_84px_96px_86px_auto] sm:items-center">
+            <input name="payer_name" defaultValue={rate.payer_name} className="admin-input font-semibold" />
+            <input name="cpt_code" defaultValue={rate.cpt_code} className="admin-input" />
+            <input name="amount" type="number" min="0" step="0.01" defaultValue={rate.amount} className="admin-input" />
+            <label className="flex items-center gap-2 font-semibold text-muted">
+              <input name="is_active" type="checkbox" defaultChecked={rate.is_active} className="h-4 w-4 accent-moss" />
+              Active
+            </label>
+            <input name="notes" defaultValue={rate.notes || ""} placeholder="Notes" className="admin-input sm:hidden" />
+            <button className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Save</button>
+          </form>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AdminServiceTypesEditor({ serviceTypes, onCreate, onSave }: { serviceTypes: AdminConfig["serviceTypes"]; onCreate: (event: FormEvent<HTMLFormElement>) => Promise<void>; onSave: (event: FormEvent<HTMLFormElement>, serviceTypeId: string) => Promise<void> }) {
+  return (
+    <Card>
+      <SectionHeader title="Service types" subtitle="Backend service labels available for billing and generation flows." />
+      <form onSubmit={onCreate} className="mt-4 grid gap-2 rounded-2xl border border-line bg-cream p-3 sm:grid-cols-[1fr_90px_auto]">
+        <input name="name" required placeholder="Service name" className="admin-input" />
+        <input name="display_order" type="number" defaultValue={serviceTypes.length} className="admin-input" />
+        <button className="rounded-xl bg-moss px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Add service</button>
+      </form>
+      <div className="mt-4 grid gap-2">
+        {serviceTypes.map((serviceType) => (
+          <form key={serviceType.id} onSubmit={(event) => onSave(event, serviceType.id)} className="grid gap-2 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm sm:grid-cols-[1fr_90px_86px_auto] sm:items-center">
+            <input name="name" defaultValue={serviceType.name} className="admin-input font-semibold" />
+            <input name="display_order" type="number" defaultValue={serviceType.display_order} className="admin-input" />
+            <label className="flex items-center gap-2 font-semibold text-muted">
+              <input name="is_active" type="checkbox" defaultChecked={serviceType.is_active} className="h-4 w-4 accent-moss" />
+              Active
+            </label>
+            <button className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Save</button>
+          </form>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AdminClassificationEditor({ rules, onCreate, onSave }: { rules: AdminConfig["classificationRules"]; onCreate: (event: FormEvent<HTMLFormElement>) => Promise<void>; onSave: (event: FormEvent<HTMLFormElement>, ruleId: string) => Promise<void> }) {
+  return (
+    <Card>
+      <SectionHeader title="Classification rules" subtitle="Keywords and regex patterns used by Drive file sync." />
+      <form onSubmit={onCreate} className="mt-4 grid gap-2 rounded-2xl border border-line bg-cream p-3 sm:grid-cols-[130px_1fr_auto]">
+        <select name="category" defaultValue="INTAKE" className="admin-input">
+          <option>INTAKE</option>
+          <option>ASSESSMENT</option>
+          <option>ZOOM_NOTE</option>
+          <option>UNKNOWN</option>
+        </select>
+        <input name="keyword_or_pattern" required placeholder="Keyword or regex pattern" className="admin-input" />
+        <button className="rounded-xl bg-moss px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Add rule</button>
+      </form>
+      <div className="mt-4 grid max-h-[360px] gap-2 overflow-auto pr-1">
+        {rules.map((rule) => (
+          <form key={rule.id} onSubmit={(event) => onSave(event, rule.id)} className="grid gap-2 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm sm:grid-cols-[130px_1fr_86px_auto] sm:items-center">
+            <select name="category" defaultValue={rule.category} className="admin-input">
+              <option>INTAKE</option>
+              <option>ASSESSMENT</option>
+              <option>ZOOM_NOTE</option>
+              <option>UNKNOWN</option>
+            </select>
+            <input name="keyword_or_pattern" defaultValue={rule.keyword_or_pattern} className="admin-input font-semibold" />
+            <label className="flex items-center gap-2 font-semibold text-muted">
+              <input name="is_active" type="checkbox" defaultChecked={rule.is_active} className="h-4 w-4 accent-moss" />
+              Active
+            </label>
+            <button className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Save</button>
+          </form>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AdminMiniTable({ title, subtitle, rows }: { title: string; subtitle: string; rows: string[][] }) {
+  return (
+    <Card>
+      <SectionHeader title={title} subtitle={subtitle} />
+      <div className="mt-4 overflow-hidden rounded-2xl border border-line">
+        {rows.length ? rows.map((row, index) => (
+          <div key={`${row[0]}-${index}`} className="grid grid-cols-[1fr_0.8fr_0.7fr] gap-3 border-b border-line bg-white px-3 py-3 text-xs last:border-b-0">
+            <span className="truncate font-bold text-ink">{row[0]}</span>
+            <span className="truncate text-muted">{row[1]}</span>
+            <span className="truncate text-right font-semibold text-moss">{row[2]}</span>
+          </div>
+        )) : <div className="p-4 text-sm text-muted">No rows configured.</div>}
+      </div>
+    </Card>
+  );
+}
+
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`rounded-[1.35rem] border border-line/90 bg-white p-5 shadow-card transition duration-200 ${className}`}>{children}</section>;
 }
@@ -589,7 +861,7 @@ function ActionButton({ children, onClick, disabled, tone, icon, subtext }: { ch
 
 function CopyButton({ text, label, icon }: { text: string; label: string; icon?: React.ReactNode }) {
   return (
-    <button onClick={() => navigator.clipboard.writeText(text)} className="focus-ring inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition hover:-translate-y-0.5 hover:bg-cream">
+    <button onClick={() => copyToClipboard(text)} className="focus-ring inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition hover:-translate-y-0.5 hover:bg-cream">
       {icon || <Clipboard size={16} />}
       {label}
     </button>

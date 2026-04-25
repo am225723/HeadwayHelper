@@ -1,22 +1,521 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>Session Note</h1>
-    <p><strong>Patient:</strong> {{patient_name}}</p>
-    <p><strong>Date of Service:</strong> {{date_of_service}}</p>
-    <p><strong>Service:</strong> {{service_name}}</p>
-    <h2>Subjective</h2>
-    <p>{{subjective}}</p>
-    <h2>Objective</h2>
-    <p>{{objective}}</p>
-    <h2>Assessment</h2>
-    <p>{{assessment}}</p>
-    <h2>Plan</h2>
-    <p>{{plan}}</p>
-    <h2>Billing Support</h2>
-    <p>ICD-10: {{icd10_codes}}</p>
-    <p>Psychotherapy minutes: {{psychotherapy_minutes}}</p>
-    <p>E/M level: {{em_level}}</p>
-    <p>Medical decision making documented: {{has_medical_decision_making}}</p>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DARP Session Note - Integrative Psychiatry</title>
+    <style>
+        /* --- CORE TYPOGRAPHY & COLORS --- */
+        /* Primary Blue: #1a365d, Secondary Blue: #3182ce, Prompt: #555555, Light: #f5f5f5, Border: #cccccc */
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #fff;
+        }
+
+        /* --- PDF PRINT SETUP --- */
+        @page {
+            size: letter;
+            margin: 1in;
+        }
+
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .page-break {
+                page-break-before: always;
+            }
+
+            .no-break {
+                page-break-inside: avoid;
+            }
+        }
+
+        /* --- LAYOUT & UTILITIES --- */
+        .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+        
+        .text-left {
+            text-align: left;
+        }
+
+        .text-primary {
+            color: #1a365d; /* Updated to Blue */
+        }
+
+        .text-secondary {
+            color: #3182ce; /* Updated to Blue */
+        }
+
+        .uppercase {
+            text-transform: uppercase;
+        }
+
+        .bold {
+            font-weight: bold;
+        }
+
+        .ai-prompt {
+            color: #555555;
+            font-style: italic;
+            background-color: #f8fafc;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        
+        .ai-prompt-block {
+            color: #4a5568;
+            font-style: italic;
+            background-color: #f8fafc;
+            border-left: 4px solid #3182ce;
+            padding: 12px 16px;
+            margin-bottom: 15px;
+            border-radius: 0 4px 4px 0;
+            font-size: 9.5pt;
+        }
+        
+        .ai-prompt-block p {
+            margin-bottom: 6px;
+        }
+        
+        .ai-prompt-block p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .ai-prompt-block ul {
+            margin-bottom: 6px;
+            padding-left: 20px;
+        }
+
+        /* --- DATA OUTPUT BLOCK --- */
+        .data-output-block {
+            background-color: #f0f7ff; /* Light blue tint */
+            border-left: 4px solid #1a365d; /* Dark primary blue line */
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .data-output-block p {
+            margin-bottom: 6px;
+        }
+        
+        .data-output-block p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .data-output-block ul {
+            margin-bottom: 0;
+            padding-left: 20px;
+        }
+
+        /* --- HEADER & LOGO --- */
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 15px;
+        }
+
+        .logo-container {
+            width: 170px;
+            height: auto;
+            margin: 0;
+            flex-shrink: 0;
+            text-align: right; /* Ensure logo aligns to the right side of its container */
+        }
+
+        .header-content {
+            text-align: left; /* Changed to left */
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        .business-name {
+            font-size: 32pt;
+            font-weight: bold;
+            color: #1a365d; /* Updated to Blue */
+            font-variant: small-caps;
+            line-height: 0.95;
+            margin-bottom: 8px;
+        }
+
+        .provider-title {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #3182ce; /* Updated to Blue */
+            margin-bottom: 6px;
+        }
+
+        .contact-info {
+            font-size: 9.5pt;
+            color: #555;
+            line-height: 1.4;
+            margin-bottom: 15px;
+        }
+
+        .sub-title {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        /* --- PATIENT INFO BOX --- */
+        .patient-info-box {
+            background-color: #f0f7ff; /* Light blue tint */
+            border: 2px solid #3182ce; /* Updated to Blue */
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .info-table td {
+            padding: 4px 8px;
+            vertical-align: top;
+        }
+
+        .info-label {
+            font-weight: bold;
+            white-space: nowrap;
+            width: 1%;
+            color: #1a365d;
+        }
+
+        /* --- SYSTEM INSTRUCTIONS BOX --- */
+        .system-instructions-box {
+            background-color: #edf2f7;
+            border: 1px solid #cbd5e0;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 4px;
+        }
+        
+        .system-instructions-box h2 {
+            font-size: 11pt;
+            color: #1a365d;
+            margin-top: 0;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #cbd5e0;
+            padding-bottom: 5px;
+        }
+        
+        .system-instructions-box h3 {
+            font-size: 10pt;
+            color: #2d3748;
+            margin-top: 12px;
+            margin-bottom: 6px;
+        }
+
+        /* --- TYPOGRAPHY --- */
+        h1.section-title {
+            font-size: 14pt;
+            color: #1a365d; /* Updated to Blue */
+            border-bottom: 2px solid #3182ce; /* Updated to Blue */
+            padding-bottom: 4px;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        h2.subsection-title {
+            font-size: 11pt;
+            color: #1a365d; /* Updated to Blue */
+            margin-top: 20px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        ul {
+            margin-top: 0;
+            margin-bottom: 15px;
+            padding-left: 20px;
+        }
+
+        ul li {
+            margin-bottom: 8px;
+        }
+
+        /* --- DATA TABLES --- */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+
+        .data-table td {
+            padding: 6px 8px;
+            vertical-align: top;
+            border-bottom: 1px solid #eee;
+        }
+
+        .data-table td:first-child {
+            font-weight: bold;
+            width: 20%;
+            border-right: 1px solid #eee;
+        }
+
+        /* --- SIGNATURE SECTION --- */
+        .signature-section {
+            margin-top: 50px;
+        }
+
+        .signature-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 40px;
+        }
+
+        .signature-table td {
+            width: 48%;
+            vertical-align: bottom;
+        }
+
+        .signature-table td.spacer {
+            width: 4%;
+        }
+
+        .sig-line {
+            border-bottom: 1px solid #000;
+            height: 40px;
+            margin-bottom: 5px;
+        }
+
+        .sig-name {
+            font-weight: bold;
+            font-size: 11pt;
+        }
+
+        .sig-date {
+            margin-top: 5px;
+            font-size: 10pt;
+        }
+
+        hr.divider {
+            border: 0;
+            border-top: 1px solid #cccccc;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <!-- HEADER & LOGO (Reversed layout) -->
+        <div class="header-section no-break">
+            <!-- Header Text now on the Left -->
+            <div class="header-content">
+                <div class="business-name">Integrative<br>Psychiatry</div>
+                <div class="provider-title">Douglas Zelisko, M.D. &bull; Board Certified Psychiatrist</div>
+                <div class="contact-info">
+                    45 South Main Street Suite 111, West Hartford, CT 06107<br>
+                    P: 860.615.3629 &nbsp;|&nbsp; F: 860.318.2085 &nbsp;|&nbsp; E: support@drzelisko.com
+                </div>
+                <div class="sub-title">DARP SESSION NOTE</div>
+            </div>
+            <!-- Logo now on the Right -->
+            <div class="logo-container">
+                <img src="https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png" alt="Integrative Psychiatry Logo" style="width: 170px; height: auto;">
+            </div>
+        </div>
+
+        <!-- PATIENT INFO BOX -->
+        <div class="patient-info-box no-break">
+            <table class="info-table">
+                <tr>
+                    <td class="info-label">Patient Name:</td>
+                    <td><span class="ai-prompt">[AI: Extract Patient Name]</span></td>
+                    <td class="info-label">DOB:</td>
+                    <td><span class="ai-prompt">[AI: Extract DOB format YYYY-MM-DD]</span></td>
+                </tr>
+                <tr>
+                    <td class="info-label">Client ID:</td>
+                    <td>{{client_id}}</td>
+                    <td class="info-label">Provider:</td>
+                    <td class="bold">Douglas Zelisko, M.D.</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Date of Service:</td>
+                    <td>{{date_of_service}}</td>
+                    <td class="info-label">Total Minutes:</td>
+                    <td><span class="ai-prompt">[AI: Insert Total Session Minutes]</span></td>
+                </tr>
+                <tr>
+                    <td class="info-label">ICD-10 Codes:</td>
+                    <td><span class="ai-prompt">[AI: Insert ICD-10 Codes]</span></td>
+                    <td class="info-label">CPT Codes:</td>
+                    <td><span class="ai-prompt">[AI: Insert CPT Codes]</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- GLOBAL AI SYSTEM INSTRUCTIONS -->
+        <div class="system-instructions-box no-break ai-prompt">
+            <h2>System Instructions: Clinical Documentation & Medical Coding Specialist</h2>
+            
+            <h3>I. Persona and Tone</h3>
+            <ul>
+                <li><span class="bold">Persona:</span> You are a highly knowledgeable, meticulous, and ethically minded clinical documentation specialist and medical coder. Your primary goal is to assist mental health professionals in creating accurate, comprehensive, and compliant therapy notes.</li>
+                <li><span class="bold">Tone:</span> Professional, objective, precise, and supportive. Avoid colloquialisms, personal opinions, or judgmental language. Always maintain patient confidentiality and privacy in your suggested outputs.</li>
+                <li><span class="bold">Ethical Considerations:</span> Always emphasize that your output is a draft and must be reviewed, edited, and finalized by a clinician. You do not replace professional clinical judgment.</li>
+            </ul>
+
+            <h3>II. Core Objectives & Input Processing</h3>
+            <ul>
+                <li>Transform raw therapy session data (transcripts, observations, video cues) into structured DARP notes.</li>
+                <li><span class="bold">Data Extraction:</span> Systematically scan inputs for observable behaviors, quantifiable information, subjective client reports (direct quotes/paraphrasing), and all therapist interventions.</li>
+                <li><span class="bold">Session Duration:</span> You must require the user to specify the exact duration of the core psychotherapy session in minutes to generate accurate CPT codes. If missing, ask for it before generating codes.</li>
+                <li><span class="bold">Context:</span> Utilize any provided previous diagnoses or treatment plans to assess progress and refine the current plan.</li>
+            </ul>
+            
+            <p class="bold" style="margin-top: 10px;">III. Output Generation Rules (DARP & Coding)</p>
+            <p>Generate the output using the exact structure, constraints, and Markdown headings provided below.</p>
+        </div>
+
+        <!-- SECTION 1: DATA -->
+        <h1 class="section-title">1. Data</h1>
+        <div class="ai-prompt-block">
+            <p><span class="bold">Instructions:</span> Synthesize all objective and subjective client observations (e.g., behaviors, mood, affect, key verbalizations, illustrative quotes) from transcripts and notes. Focus on observable behaviors and use descriptive, non-speculative language. Ensure statements describe observable behavior, not assumptions.</p>
+            <p><span class="bold">Correction Check:</span> Change "Client appears sad" to "Client presented with downcast gaze, soft voice, and reported feeling tearful."</p>
+            <p><span class="bold">Format:</span> Bullet points.</p>
+        </div>
+        
+        <div class="data-output-block">
+            <ul>
+                <li><span class="ai-prompt">[AI: Insert Data Bullet Points Here]</span></li>
+            </ul>
+        </div>
+
+        <!-- SECTION 2: ASSESSMENT -->
+        <h1 class="section-title">2. Assessment</h1>
+        <div class="ai-prompt-block">
+            <p><span class="bold">Instructions:</span> Provide a concise clinical interpretation based only on the 'Data' section. Discuss progress on existing goals, identified strengths, challenges, and any emerging themes. Avoid personal opinions or emotional responses. Every clinical interpretation must trace back directly to specific data observations.</p>
+            <p><span class="bold">Correction Check:</span> Change "Client is resistant" to "Client demonstrated resistance to exploring specific anxieties, evidenced by topic shifting and humor use when challenging topics were introduced."</p>
+            <p><span class="bold">Format:</span> Narrative paragraph or concise bullet points.</p>
+        </div>
+        
+        <div class="data-output-block">
+            <p><span class="ai-prompt">[AI: Insert Assessment Narrative Here]</span></p>
+        </div>
+
+        <!-- SECTION 3: RESPONSE -->
+        <h1 class="section-title">3. Response</h1>
+        <div class="ai-prompt-block">
+            <p><span class="bold">Instructions:</span> Detail all specific therapist interventions used during the session and the client's immediate and overall reactions to them. Describe how interventions were applied using clear, descriptive, jargon-free language. Assess the client's engagement. For each intervention, explicitly state the observed client reaction.</p>
+            <p><span class="bold">Correction Check:</span> Change "Applied CBT" to "Introduced cognitive restructuring techniques to challenge distorted thoughts, leading the client to identify and reframe one negative self-statement."</p>
+            <p><span class="bold">Format:</span> Bullet points.</p>
+        </div>
+        
+        <div class="data-output-block">
+            <ul>
+                <li><span class="ai-prompt">[AI: Insert Response Bullet Points Here]</span></li>
+            </ul>
+        </div>
+
+        <!-- SECTION 4: PLAN -->
+        <h1 class="section-title">4. Plan</h1>
+        <div class="ai-prompt-block">
+            <p><span class="bold">Instructions:</span> Formulate specific, measurable, achievable, relevant, and time-bound (SMART) goals and next steps based on the session's Data, Assessment, and Response. Include any assigned homework, future interventions, or potential referrals. Ensure each item answers "What specific action will be taken?" and "How will success be measured?"</p>
+            <p><span class="bold">Correction Check:</span> Change "Client will work on social skills" to "Client will initiate one 5-minute conversation with a coworker before the next session to practice assertiveness skills."</p>
+            <p><span class="bold">Format:</span> Bullet points.</p>
+        </div>
+        
+        <div class="data-output-block">
+            <ul>
+                <li><span class="ai-prompt">[AI: Insert Plan Bullet Points Here]</span></li>
+            </ul>
+        </div>
+
+        <!-- SECTION 5: CODING -->
+        <h1 class="section-title">5. Medical Coding</h1>
+        
+        <h2 class="subsection-title">ICD-10 Diagnosis Codes</h2>
+        <div class="ai-prompt-block">
+            <p><span class="bold">Instructions:</span> Based on the combined information in the 'Data' and 'Assessment' sections, propose up to three most relevant ICD-10 diagnosis codes. For each code, provide a brief justification directly linking it to the client's symptoms, reported history, or observed presentation. Prioritize the most specific code available (e.g., F32.1 over F32.9). If an 'unspecified' code is necessary, note the reason (e.g., "Further assessment needed to specify diagnosis").</p>
+            <p><span class="bold">Format:</span> Dedicated section with bulleted codes and brief justifications.</p>
+        </div>
+        
+        <div class="data-output-block">
+            <ul>
+                <li><span class="ai-prompt">[AI: Insert ICD-10 Bullet Points Here]</span></li>
+            </ul>
+        </div>
+
+        <h2 class="subsection-title">CPT Procedure Codes</h2>
+        <div class="ai-prompt-block">
+            <p><span class="bold">Instructions:</span> Based on the specified session duration and the type of interventions described in the 'Response' section, recommend the most appropriate CPT procedure code(s). Clearly state the chosen code and its corresponding time increment. If applicable, also suggest add-on codes with justification.</p>
+            <p><span class="bold">Internal Logic Reference:</span></p>
+            <ul>
+                <li>16-37 mins: 90832</li>
+                <li>38-52 mins: 90834</li>
+                <li>53+ mins: 90837</li>
+                <li>Initial evaluation: 90791</li>
+                <li>Crisis intervention: 90839 (+90840 if over 74 mins)</li>
+                <li>Interactive complexity factors present (requires strong DARP justification): +90785</li>
+            </ul>
+            <p><span class="bold">Format:</span> Dedicated section.</p>
+        </div>
+        
+        <div class="data-output-block">
+            <ul>
+                <li><span class="ai-prompt">[AI: Insert CPT Recommendations Here]</span></li>
+            </ul>
+        </div>
+
+        <!-- SIGNATURE BLOCK -->
+        <div class="signature-section no-break">
+            <table class="signature-table">
+                <tr>
+                    <td>
+                        <img src="https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/dzsignature.png" alt="Dr. Zelisko Signature" style="max-height: 60px; width: auto; margin-bottom: -5px; display: block;">
+                        <div class="sig-line"></div>
+                        <div class="sig-name">Douglas Zelisko, M.D.</div>
+                        <div class="sig-date">Electronically Signed On: {{date_of_service}}</div>
+                    </td>
+                    <td class="spacer"></td>
+                    <td>
+                        <!-- Optional secondary signature line left blank for patient/reviewer if needed -->
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+    </div>
+</body>
 </html>

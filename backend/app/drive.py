@@ -10,7 +10,7 @@ from googleapiclient.http import MediaInMemoryUpload
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import FileType, Patient, ProcessedFile, SourceDocument
+from .models import ClassificationRule, FileType, Patient, ProcessedFile, SourceDocument
 
 
 ZOOM_NOTE_RE = re.compile(r"^\d{6}-zoomn?note\.pdf$", re.IGNORECASE)
@@ -32,14 +32,16 @@ class DriveClient(Protocol):
         ...
 
 
-def classify_file(filename: str) -> FileType:
+def classify_file(filename: str, db: Session | None = None) -> FileType:
     lower = filename.lower()
-    if "headway intake" in lower or "intake" in lower:
-        return FileType.INTAKE
-    if any(token in lower for token in ("asrs", "phq9", "gad7", "phq-9")):
-        return FileType.ASSESSMENT
-    if ZOOM_NOTE_RE.match(filename):
-        return FileType.ZOOM_NOTE
+    rules = _classification_rules(db)
+    for category, patterns in rules.items():
+        for pattern in patterns:
+            if category == FileType.ZOOM_NOTE.value:
+                if re.match(pattern, filename, re.IGNORECASE):
+                    return FileType.ZOOM_NOTE
+            elif pattern.lower() in lower:
+                return FileType(category)
     return FileType.UNKNOWN
 
 
@@ -143,7 +145,7 @@ def sync_patient_files(db: Session, patient: Patient, files: list[dict], commit:
             patient_id=patient.id,
             drive_file_id=drive_file_id,
             name=item["name"],
-            file_type=classify_file(item["name"]).value,
+            file_type=classify_file(item["name"], db).value,
             uploaded_at=_parse_drive_time(item.get("modifiedTime") or item.get("modified_time")),
             processed=False,
         )
@@ -183,3 +185,20 @@ def _load_service_account_info(raw: str) -> dict:
     if stripped.startswith("{"):
         return json.loads(stripped)
     return json.loads(Path(stripped).read_text())
+
+
+def _classification_rules(db: Session | None) -> dict[str, list[str]]:
+    fallback = {
+        FileType.INTAKE.value: ["headway intake", "intake"],
+        FileType.ASSESSMENT.value: ["asrs", "phq9", "gad7", "phq-9"],
+        FileType.ZOOM_NOTE.value: [ZOOM_NOTE_RE.pattern],
+    }
+    if db is None:
+        return fallback
+    rows = db.query(ClassificationRule).filter(ClassificationRule.is_active.is_(True)).all()
+    if not rows:
+        return fallback
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.category, []).append(row.keyword_or_pattern)
+    return grouped

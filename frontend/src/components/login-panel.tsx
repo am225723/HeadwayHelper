@@ -12,13 +12,19 @@ export function LoginPanel({ onToken }: { onToken: (token: string) => void }) {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
-    const response = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+    } catch {
+      setError("Unable to reach the backend. Make sure the FastAPI server is running on port 8000.");
+      return;
+    }
     if (!response.ok) {
-      setError("Unable to sign in. Registration is admin-controlled.");
+      setError("Unable to sign in. Check credentials or create the admin account through the backend setup flow.");
       return;
     }
     const data = await response.json();

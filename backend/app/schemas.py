@@ -83,8 +83,8 @@ class PatientDetail(BaseModel):
     drive_folder_id: str
     created_at: datetime
     updated_at: datetime
-    source_documents: list[SourceDocumentOut] = []
-    output_documents: list[OutputDocumentOut] = []
+    source_documents: list[SourceDocumentOut] = Field(default_factory=list)
+    output_documents: list[OutputDocumentOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -146,7 +146,7 @@ class DriveFileIn(BaseModel):
 
 
 class LocalResyncRequest(BaseModel):
-    files: list[DriveFileIn] = []
+    files: list[DriveFileIn] = Field(default_factory=list)
 
 
 class ClassificationUpdate(BaseModel):
@@ -162,3 +162,92 @@ class BillingComparisonResponse(BaseModel):
     option_b_codes: list[str]
     recommendation: str
     reason: str
+
+
+class AdminBaseModel(BaseModel):
+    model_config = {"from_attributes": True}
+
+
+class ReimbursementRateIn(BaseModel):
+    payer_name: str
+    cpt_code: str
+    amount: float
+    is_active: bool = True
+    notes: str | None = None
+
+
+class ReimbursementRateOut(ReimbursementRateIn, AdminBaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class BillingRuleIn(BaseModel):
+    rule_value_json: dict
+    description: str | None = None
+
+
+class BillingRuleOut(BillingRuleIn, AdminBaseModel):
+    id: str
+    rule_key: str
+    updated_at: datetime
+
+
+class ServiceTypeIn(BaseModel):
+    name: str
+    is_active: bool = True
+    display_order: int = 0
+
+
+class ServiceTypeOut(ServiceTypeIn, AdminBaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClassificationRuleIn(BaseModel):
+    category: str = Field(pattern="^(INTAKE|ASSESSMENT|ZOOM_NOTE|UNKNOWN)$")
+    keyword_or_pattern: str
+    is_active: bool = True
+
+
+class ClassificationRuleOut(ClassificationRuleIn, AdminBaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AppSettingIn(BaseModel):
+    setting_value_json: dict
+    description: str | None = None
+
+
+class AppSettingOut(AppSettingIn, AdminBaseModel):
+    id: str
+    setting_key: str
+    updated_at: datetime
+
+
+class DocumentTemplateIn(BaseModel):
+    document_type: str
+    template_name: str
+    template_source: str
+    placeholder_style: str = "mixed"
+    cleanup_rules_json: dict = Field(default_factory=dict)
+    is_active: bool = True
+
+
+class DocumentTemplateOut(DocumentTemplateIn, AdminBaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    placeholders: list[str] = Field(default_factory=list)
+
+
+class TemplatePreviewRequest(BaseModel):
+    values: dict = Field(default_factory=dict)
+
+
+class TemplatePreviewResponse(BaseModel):
+    html: str
+    placeholders: list[str]

@@ -46,6 +46,68 @@ export type BillingComparison = {
   reason: string;
 };
 
+export type CurrentUser = {
+  id: string;
+  email: string;
+  role: "ADMIN" | "PROVIDER";
+};
+
+export type AdminRate = {
+  id: string;
+  payer_name: string;
+  cpt_code: string;
+  amount: number;
+  is_active: boolean;
+  notes: string | null;
+};
+
+export type AdminRule = {
+  id: string;
+  rule_key: string;
+  rule_value_json: Record<string, unknown>;
+  description: string | null;
+};
+
+export type AdminServiceType = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  display_order: number;
+};
+
+export type AdminClassificationRule = {
+  id: string;
+  category: string;
+  keyword_or_pattern: string;
+  is_active: boolean;
+};
+
+export type AdminSetting = {
+  id: string;
+  setting_key: string;
+  setting_value_json: Record<string, unknown>;
+  description: string | null;
+};
+
+export type AdminTemplate = {
+  id: string;
+  document_type: string;
+  template_name: string;
+  placeholder_style: string;
+  cleanup_rules_json: Record<string, unknown>;
+  is_active: boolean;
+  placeholders: string[];
+};
+
+export type AdminConfig = {
+  rates: AdminRate[];
+  billingRules: AdminRule[];
+  serviceTypes: AdminServiceType[];
+  classificationRules: AdminClassificationRule[];
+  settings: AdminSetting[];
+  templates: AdminTemplate[];
+};
+
 export async function apiFetch<T>(path: string, token: string | null, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,

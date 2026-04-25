@@ -35,3 +35,9 @@ select {
   outline: 3px solid rgba(49, 95, 76, 0.24);
   outline-offset: 2px;
 }
+
+@layer components {
+  .admin-input {
+    @apply rounded-xl border border-line bg-white px-3 py-2 text-xs text-ink shadow-sm outline-none transition placeholder:text-muted/50 focus:border-moss/45 focus:ring-4 focus:ring-moss/10;
+  }
+}
