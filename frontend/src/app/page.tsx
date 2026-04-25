@@ -4,17 +4,30 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   BadgeCheck,
+  CalendarClock,
+  CheckCircle2,
+  ChevronRight,
+  CircleDollarSign,
   Clipboard,
+  Clock3,
+  CreditCard,
+  Eye,
+  FileCheck2,
   FilePlus2,
   FileText,
   FolderSync,
+  Layers3,
   LockKeyhole,
+  MoreHorizontal,
   NotebookPen,
   RefreshCw,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
-  Stethoscope
+  Stethoscope,
+  UserRound,
+  WalletCards
 } from "lucide-react";
 import { LoginPanel } from "@/components/login-panel";
 import { StatusBadge } from "@/components/status-badge";
@@ -120,6 +133,7 @@ export default function Home() {
   return (
     <main className="min-h-screen text-ink">
       <AppHeader pendingReviewCount={pendingReviewCount} patientCount={patients.length} signedIn={Boolean(token)} />
+      <WorkspaceStatusBar signedIn={Boolean(token)} patientCount={patients.length} pendingReviewCount={pendingReviewCount} />
       {!token ? <LoginPanel onToken={(value) => { setToken(value); load(value); }} /> : null}
       {error ? <div className="mx-auto mt-5 max-w-7xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">{error}</div> : null}
 
@@ -156,22 +170,27 @@ export default function Home() {
 
 function AppHeader({ pendingReviewCount, patientCount, signedIn }: { pendingReviewCount: number; patientCount: number; signedIn: boolean }) {
   return (
-    <header className="border-b border-line/80 bg-cream/85 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-6 lg:flex-row lg:items-center lg:justify-between xl:px-6">
+    <header className="relative overflow-hidden border-b border-line/80 bg-cream/90 backdrop-blur">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(49,95,76,0.12),transparent_28rem),radial-gradient(circle_at_90%_0%,rgba(201,111,85,0.10),transparent_22rem)]" />
+      <div className="relative mx-auto flex max-w-7xl flex-col gap-5 px-5 py-7 lg:flex-row lg:items-center lg:justify-between xl:px-6">
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-moss text-white shadow-card">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-3xl bg-moss text-white shadow-card ring-8 ring-moss/10">
             <Stethoscope size={23} />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-normal text-ink">Clinical AI Webapp</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Drive intake, note generation, review, and Headway-ready billing.</p>
+            <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-moss/15 bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-moss shadow-sm">
+              <ShieldCheck size={13} />
+              Therapy operations command center
+            </div>
+            <h1 className="font-serif text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Clinical AI Webapp</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Drive intake, note generation, review, and Headway-ready billing for a calm, audit-ready clinical workflow.</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid gap-2 sm:grid-cols-2 lg:max-w-md">
           <HeaderChip icon={<FolderSync size={15} />} label="Drive sync ready" tone="green" />
           <HeaderChip icon={<NotebookPen size={15} />} label={`${pendingReviewCount} pending review`} tone={pendingReviewCount ? "amber" : "green"} />
           <HeaderChip icon={<ShieldCheck size={15} />} label={signedIn ? "Secure workspace" : "Sign-in required"} tone="neutral" />
-          <HeaderChip icon={<Activity size={15} />} label={`${patientCount} patients`} tone="neutral" />
+          <HeaderChip icon={<UserRound size={15} />} label={signedIn ? "Clinical admin" : `${patientCount} patients`} tone="neutral" />
         </div>
       </div>
     </header>
@@ -179,8 +198,26 @@ function AppHeader({ pendingReviewCount, patientCount, signedIn }: { pendingRevi
 }
 
 function HeaderChip({ icon, label, tone }: { icon: React.ReactNode; label: string; tone: "green" | "amber" | "neutral" }) {
-  const toneClass = tone === "green" ? "border-moss/20 bg-sage text-moss" : tone === "amber" ? "border-amber/20 bg-amber/10 text-amber" : "border-line bg-white text-muted";
-  return <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-sm ${toneClass}`}>{icon}{label}</span>;
+  const toneClass = tone === "green" ? "border-moss/20 bg-sage text-moss" : tone === "amber" ? "border-amber/20 bg-amber/10 text-amber" : "border-line bg-white/85 text-muted";
+  return <span className={`inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-semibold shadow-sm backdrop-blur ${toneClass}`}>{icon}{label}</span>;
+}
+
+function WorkspaceStatusBar({ signedIn, patientCount, pendingReviewCount }: { signedIn: boolean; patientCount: number; pendingReviewCount: number }) {
+  return (
+    <div className="border-b border-line/70 bg-white/55">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-5 py-3 text-xs font-semibold text-muted xl:px-6">
+        <span className="inline-flex items-center gap-2"><Activity size={14} className="text-moss" /> Operational status normal</span>
+        <span className="hidden h-1 w-1 rounded-full bg-line sm:block" />
+        <span>{patientCount} active records in workspace</span>
+        <span className="hidden h-1 w-1 rounded-full bg-line sm:block" />
+        <span>{pendingReviewCount ? `${pendingReviewCount} drafts awaiting review` : "No drafts awaiting review"}</span>
+        <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5 text-ink shadow-sm">
+          <LockKeyhole size={13} className="text-moss" />
+          {signedIn ? "Session protected" : "Authentication required"}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function PatientSidebar({
@@ -223,9 +260,9 @@ function PatientSidebar({
 
 function NewPatientCard({ onCreate, disabled }: { onCreate: (event: FormEvent<HTMLFormElement>) => void; disabled: boolean }) {
   return (
-    <Card>
+    <Card className="bg-gradient-to-br from-white to-sage/45">
       <div className="mb-4 flex items-center gap-2">
-        <div className="rounded-xl bg-sage p-2 text-moss"><FilePlus2 size={17} /></div>
+        <div className="rounded-2xl bg-white p-2 text-moss shadow-sm"><FilePlus2 size={17} /></div>
         <div>
           <h2 className="text-base font-bold">New patient</h2>
           <p className="text-xs text-muted">Link a Drive folder to start intake processing.</p>
@@ -243,17 +280,21 @@ function NewPatientCard({ onCreate, disabled }: { onCreate: (event: FormEvent<HT
 function PatientListItem({ patient, active, onSelect }: { patient: Patient; active: boolean; onSelect: () => void }) {
   const status = patientStatus(patient);
   return (
-    <button onClick={onSelect} className={`mb-2 w-full rounded-2xl border p-4 text-left transition ${active ? "border-moss/35 bg-sage shadow-sm" : "border-transparent bg-white hover:border-line hover:bg-cream"}`}>
+    <button onClick={onSelect} className={`group mb-2 w-full rounded-2xl border p-3.5 text-left transition duration-200 ${active ? "border-moss/35 bg-sage shadow-sm ring-4 ring-moss/5" : "border-transparent bg-white hover:-translate-y-0.5 hover:border-line hover:bg-cream hover:shadow-sm"}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-semibold">{patient.name}</div>
-          <div className="mt-1 truncate text-xs text-muted">Folder {patient.drive_folder_id}</div>
+        <div className="flex min-w-0 items-start gap-3">
+          <Initials name={patient.name} small />
+          <div className="min-w-0">
+            <div className="truncate font-semibold">{patient.name}</div>
+            <div className="mt-1 truncate text-xs text-muted">{shortMrn(patient)} · folder {patient.drive_folder_id.slice(0, 8)}</div>
+          </div>
         </div>
         <StatusBadge value={status.value} />
       </div>
-      <div className="mt-3 flex items-center gap-2 text-xs text-muted">
+      <div className="mt-3 flex items-center gap-2 pl-11 text-xs text-muted">
         <FileText size={13} />
-        {patient.source_documents.length} sources · {patient.output_documents.length} outputs
+        {recentActivity(patient)}
+        <ChevronRight size={13} className="ml-auto opacity-0 transition group-hover:opacity-100" />
       </div>
     </button>
   );
@@ -261,12 +302,12 @@ function PatientListItem({ patient, active, onSelect }: { patient: Patient; acti
 
 function EmptyWorkspaceState() {
   return (
-    <Card className="min-h-[620px] content-center p-10 text-center">
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-sage text-moss shadow-sm">
+    <Card className="min-h-[620px] content-center overflow-hidden bg-gradient-to-br from-white via-white to-sage/70 p-10 text-center">
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-moss shadow-card ring-8 ring-moss/10">
         <Sparkles size={28} />
       </div>
-      <h2 className="mt-6 text-2xl font-bold">Select a patient to begin</h2>
-      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted">Open a patient workspace to review Drive intake, generate documents, manage draft review, and prepare Headway billing.</p>
+      <h2 className="mt-6 font-serif text-3xl font-semibold">Select a patient to begin</h2>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted">Open a patient cockpit to review Drive intake, generate clinical documents, manage approvals, and prepare Headway billing with less context switching.</p>
       <div className="mx-auto mt-7 grid max-w-2xl gap-3 text-left sm:grid-cols-2">
         {["Review intake", "Generate summary", "Create session note", "Prepare Headway billing"].map((item) => (
           <div key={item} className="flex items-center gap-3 rounded-2xl border border-line bg-cream p-4 text-sm font-semibold">
@@ -318,23 +359,30 @@ function PatientOverviewCard({ patient }: { patient: Patient }) {
   const summary = latestOutput(patient, "SUMMARY");
   const plan = latestOutput(patient, "TREATMENT_PLAN");
   return (
-    <Card>
+    <Card className="overflow-hidden bg-gradient-to-br from-white via-white to-sage/55">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="flex min-w-0 items-start gap-4">
+          <Initials name={patient.name} />
+          <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-moss">
             <LockKeyhole size={14} />
             Active patient workspace
           </div>
-          <h2 className="text-2xl font-bold">{patient.name}</h2>
-          <p className="mt-1 text-sm text-muted">Drive folder {patient.drive_folder_id}</p>
+          <h2 className="truncate font-serif text-3xl font-semibold">{patient.name}</h2>
+          <p className="mt-1 text-sm text-muted">{shortMrn(patient)} · Age not recorded · Pronouns not recorded</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-muted">
+            <span className="rounded-full border border-line bg-white px-3 py-1.5">Clinician: Dr. Zelisko</span>
+            <span className="rounded-full border border-line bg-white px-3 py-1.5">Next appointment: Not scheduled</span>
+          </div>
+          </div>
         </div>
         <StatusBadge value={patientStatus(patient).value} />
       </div>
       <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Latest intake" value={latestIntake ? formatDate(latestIntake.uploaded_at) : "Not received"} />
-        <Metric label="Latest note" value={latestZoom ? formatDate(latestZoom.uploaded_at) : "Not received"} />
-        <Metric label="Summary" value={summary?.status || "Not generated"} />
-        <Metric label="Treatment plan" value={plan?.status || "Not ready"} />
+        <Metric icon={<FileText size={15} />} label="Latest intake" value={latestIntake ? formatDate(latestIntake.uploaded_at) : "Not received"} />
+        <Metric icon={<CalendarClock size={15} />} label="Latest note" value={latestZoom ? formatDate(latestZoom.uploaded_at) : "Not received"} />
+        <Metric icon={<FileCheck2 size={15} />} label="Summary" value={summary?.status || "Not generated"} />
+        <Metric icon={<Layers3 size={15} />} label="Treatment plan" value={plan?.status || "Not ready"} />
       </div>
     </Card>
   );
@@ -344,13 +392,13 @@ function QuickActionsCard({ patient, billing, onGenerate, onResync }: { patient:
   const zoom = patient.source_documents.find((doc) => doc.file_type === "ZOOM_NOTE");
   return (
     <Card>
-      <SectionHeader title="Quick actions" subtitle="Generate drafts and keep Drive sources current." />
+      <SectionHeader eyebrow="Clinical automation" title="Quick actions" subtitle="Generate drafts, review outputs, and prepare billing without leaving the patient cockpit." />
       <div className="mt-4 grid gap-3">
-        <ActionButton tone="primary" onClick={() => onGenerate(`/patients/${patient.id}/generate/summary`, { save_pdf: false })}>Generate Summary</ActionButton>
-        <ActionButton tone="primary" disabled={!zoom} onClick={() => zoom && onGenerate(`/patients/${patient.id}/generate/session-note`, { source_document_id: zoom.id, save_pdf: false })}>Generate Session Note</ActionButton>
-        <ActionButton tone="secondary" onClick={() => onGenerate(`/patients/${patient.id}/generate/treatment-plan`, { save_pdf: false })}>Generate Treatment Plan</ActionButton>
-        <ActionButton tone="secondary" onClick={onResync} icon={<RefreshCw size={16} />}>Resync sample files</ActionButton>
-        <ActionButton tone="accent" disabled={!billing} onClick={() => billing && navigator.clipboard.writeText(billing.headway_block)} icon={<Clipboard size={16} />}>Copy Billing Summary</ActionButton>
+        <ActionButton tone="primary" icon={<Sparkles size={16} />} subtext="Intake + assessments" onClick={() => onGenerate(`/patients/${patient.id}/generate/summary`, { save_pdf: false })}>Generate intake summary</ActionButton>
+        <ActionButton tone="primary" icon={<NotebookPen size={16} />} subtext={zoom ? "From selected Zoom note" : "Needs Zoom note"} disabled={!zoom} onClick={() => zoom && onGenerate(`/patients/${patient.id}/generate/session-note`, { source_document_id: zoom.id, save_pdf: false })}>Draft session note</ActionButton>
+        <ActionButton tone="secondary" icon={<Layers3 size={16} />} subtext="Summary + latest note" onClick={() => onGenerate(`/patients/${patient.id}/generate/treatment-plan`, { save_pdf: false })}>Generate treatment plan</ActionButton>
+        <ActionButton tone="secondary" onClick={onResync} icon={<RefreshCw size={16} />} subtext="Pull Drive changes">Resync files</ActionButton>
+        <ActionButton tone="accent" disabled={!billing} onClick={() => billing && navigator.clipboard.writeText(billing.headway_block)} icon={<Clipboard size={16} />} subtext="Headway-ready block">Copy billing summary</ActionButton>
       </div>
     </Card>
   );
@@ -359,13 +407,20 @@ function QuickActionsCard({ patient, billing, onGenerate, onResync }: { patient:
 function SourceDocumentsCard({ patient, onClassify }: { patient: Patient; onClassify: (source: SourceDocument, fileType: string) => Promise<void> }) {
   return (
     <Card>
-      <SectionHeader title="Source documents" subtitle="Classify source files before generation." />
+      <SectionHeader eyebrow="Drive library" title="Source documents" subtitle="Review file types, status, and workflow readiness." />
       <div className="mt-4 grid gap-3">
         {patient.source_documents.map((source) => (
-          <div key={source.id} className="grid gap-3 rounded-2xl border border-line bg-cream p-4 sm:grid-cols-[minmax(0,1fr)_160px] sm:items-center">
-            <div className="min-w-0">
-              <div className="truncate font-semibold">{source.name}</div>
-              <div className="mt-1 text-xs text-muted">{formatDate(source.uploaded_at)} · {source.processed ? "processed" : "awaiting workflow"}</div>
+          <div key={source.id} className="group grid gap-3 rounded-2xl border border-line bg-cream p-4 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-sm sm:grid-cols-[minmax(0,1fr)_160px_36px] sm:items-center">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="rounded-2xl bg-white p-2 text-moss shadow-sm"><FileText size={16} /></div>
+              <div className="min-w-0">
+                <div className="truncate font-semibold">{documentLabel(source)}</div>
+                <div className="mt-1 truncate text-xs text-muted">{source.name}</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-line bg-white px-2.5 py-1 text-muted">{formatDate(source.uploaded_at)}</span>
+                  <span className={`rounded-full border px-2.5 py-1 ${source.processed ? "border-moss/20 bg-sage text-moss" : "border-amber/20 bg-amber/10 text-amber"}`}>{source.processed ? "Ready" : "Awaiting workflow"}</span>
+                </div>
+              </div>
             </div>
             <select className="focus-ring rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={source.file_type} onChange={(event) => onClassify(source, event.target.value)}>
               <option>INTAKE</option>
@@ -373,6 +428,7 @@ function SourceDocumentsCard({ patient, onClassify }: { patient: Patient; onClas
               <option>ZOOM_NOTE</option>
               <option>UNKNOWN</option>
             </select>
+            <button className="hidden h-9 w-9 items-center justify-center rounded-xl border border-line bg-white text-muted transition hover:text-ink sm:flex" type="button" aria-label="More document actions"><MoreHorizontal size={16} /></button>
           </div>
         ))}
         {!patient.source_documents.length ? <Empty text="No source documents synced yet." /> : null}
@@ -394,11 +450,18 @@ function WorkflowStatusCard({ patient, billing }: { patient: Patient; billing: B
   ] as const;
   return (
     <Card>
-      <SectionHeader title="Workflow status" subtitle="Progress from Drive intake to billing readiness." />
-      <div className="mt-4 grid gap-2">
-        {rows.map(([label, done]) => (
-          <div key={label} className="flex items-center justify-between rounded-2xl border border-line bg-white px-4 py-3">
-            <span className="text-sm font-semibold">{label}</span>
+      <SectionHeader eyebrow="Care pathway" title="Workflow timeline" subtitle="Track clinical documentation from intake to billing." />
+      <div className="mt-5 grid gap-0">
+        {rows.map(([label, done], index) => (
+          <div key={label} className="relative grid grid-cols-[34px_minmax(0,1fr)_auto] gap-3 pb-4 last:pb-0">
+            {index < rows.length - 1 ? <span className="absolute left-[15px] top-8 h-[calc(100%-1.4rem)] w-px bg-line" /> : null}
+            <span className={`z-10 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm ${done ? "border-moss bg-moss text-white" : "border-line bg-white text-muted"}`}>
+              {done ? <CheckCircle2 size={15} /> : <Clock3 size={15} />}
+            </span>
+            <div>
+              <div className="text-sm font-semibold">{label}</div>
+              <div className="mt-1 text-xs text-muted">{done ? "Complete and available in workspace" : "Waiting for source or review"}</div>
+            </div>
             <StatusBadge value={done ? "READY" : "PENDING"} />
           </div>
         ))}
@@ -410,9 +473,15 @@ function WorkflowStatusCard({ patient, billing }: { patient: Patient; billing: B
 function BillingSummaryCard({ billing, billingCodesOnly }: { billing: BillingSummary | null; billingCodesOnly: string }) {
   return (
     <Card className="border-moss/20 bg-gradient-to-br from-white to-sage/70">
-      <SectionHeader title="Billing summary" subtitle="Headway-ready fields for clinical operations." />
+      <SectionHeader eyebrow="Revenue readiness" title="Billing command center" subtitle="Review coding fields, claim readiness, and Headway copy actions." />
       {billing ? (
         <div className="mt-4 grid gap-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <Metric icon={<CreditCard size={15} />} label="Selected CPT" value={billing.cpt_codes || "Needs code"} />
+            <Metric icon={<WalletCards size={15} />} label="Payer" value="Needs confirmation" />
+            <Metric icon={<CircleDollarSign size={15} />} label="Patient responsibility" value="Not calculated" />
+            <Metric icon={<BadgeCheck size={15} />} label="Status" value="Billing ready" />
+          </div>
           <div className="grid gap-3 rounded-2xl border border-moss/15 bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
             {parseBillingBlock(billing.headway_block).map(([label, value]) => <Metric key={label} label={label} value={value || "Needs confirmation"} />)}
           </div>
@@ -421,6 +490,8 @@ function BillingSummaryCard({ billing, billingCodesOnly }: { billing: BillingSum
             <CopyButton text={billing.headway_block} label="Copy Billing Summary" />
             <CopyButton text={billingCodesOnly} label="Copy ICD/CPT Only" />
             <CopyButton text={`${billing.headway_block}\n\n${JSON.stringify(billing.reimbursement_notes, null, 2)}`} label="Copy All Fields" />
+            <UtilityButton label="Preview claim" icon={<Eye size={16} />} />
+            <UtilityButton label="Send to Headway" icon={<Send size={16} />} disabled />
           </div>
         </div>
       ) : (
@@ -434,7 +505,11 @@ function ReimbursementComparisonCard({ rows }: { rows: BillingComparison[] }) {
   const bestRows = rows.filter((row) => row.recommendation === "Option B");
   return (
     <Card>
-      <SectionHeader title="Psychiatric evaluation comparison" subtitle="Compare 90792 against E/M plus psychotherapy add-on." />
+      <SectionHeader eyebrow="Reimbursement analytics" title="Psychiatric evaluation comparison" subtitle="Compare 90792 against E/M plus psychotherapy add-on." />
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <OptionCard label="Option A" title="90792" value={formatMoney(rows[0]?.option_a_total ?? null)} recommended={rows.some((row) => row.recommendation === "Option A")} />
+        <OptionCard label="Option B" title="E/M + psychotherapy add-on" value={formatMoney(rows[0]?.option_b_total ?? null)} recommended={rows.some((row) => row.recommendation === "Option B")} />
+      </div>
       <div className="mt-4 overflow-auto">
         <table className="w-full min-w-[820px] border-separate border-spacing-0 text-sm">
           <thead>
@@ -468,13 +543,14 @@ function ReimbursementComparisonCard({ rows }: { rows: BillingComparison[] }) {
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-3xl border border-line bg-white p-5 shadow-card ${className}`}>{children}</section>;
+  return <section className={`rounded-[1.35rem] border border-line/90 bg-white p-5 shadow-card transition duration-200 ${className}`}>{children}</section>;
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function SectionHeader({ title, subtitle, eyebrow }: { title: string; subtitle: string; eyebrow?: string }) {
   return (
     <div>
-      <h2 className="text-lg font-bold">{title}</h2>
+      {eyebrow ? <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-moss">{eyebrow}</div> : null}
+      <h2 className="text-lg font-bold tracking-tight">{title}</h2>
       <p className="mt-1 text-sm leading-5 text-muted">{subtitle}</p>
     </div>
   );
@@ -489,32 +565,62 @@ function Field({ label, name, placeholder, disabled }: { label: string; name: st
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-line bg-cream px-4 py-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</div>
+    <div className="rounded-2xl border border-line bg-cream px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">{icon ? <span className="text-moss">{icon}</span> : null}{label}</div>
       <div className="mt-1 truncate text-sm font-bold text-ink">{value}</div>
     </div>
   );
 }
 
-function ActionButton({ children, onClick, disabled, tone, icon }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; tone: "primary" | "secondary" | "accent"; icon?: React.ReactNode }) {
+function ActionButton({ children, onClick, disabled, tone, icon, subtext }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; tone: "primary" | "secondary" | "accent"; icon?: React.ReactNode; subtext?: string }) {
   const toneClass = tone === "primary" ? "bg-moss text-white hover:bg-moss/90" : tone === "accent" ? "border-clay/25 bg-clay/10 text-clay hover:bg-clay/15" : "border-line bg-white text-ink hover:bg-cream";
   return (
-    <button disabled={disabled} onClick={onClick} className={`focus-ring inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-45 ${toneClass}`}>
-      {icon}
-      {children}
+    <button disabled={disabled} onClick={onClick} className={`focus-ring group grid grid-cols-[34px_minmax(0,1fr)] items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold shadow-sm transition duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45 ${toneClass}`}>
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">{icon}</span>
+      <span>
+        <span className="block">{children}</span>
+        {subtext ? <span className={`mt-0.5 block text-xs font-medium ${tone === "primary" ? "text-white/75" : "text-muted"}`}>{subtext}</span> : null}
+      </span>
     </button>
   );
 }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
+function CopyButton({ text, label, icon }: { text: string; label: string; icon?: React.ReactNode }) {
   return (
-    <button onClick={() => navigator.clipboard.writeText(text)} className="focus-ring inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition hover:bg-cream">
-      <Clipboard size={16} />
+    <button onClick={() => navigator.clipboard.writeText(text)} className="focus-ring inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition hover:-translate-y-0.5 hover:bg-cream">
+      {icon || <Clipboard size={16} />}
       {label}
     </button>
   );
+}
+
+function UtilityButton({ label, icon, disabled = false }: { label: string; icon: React.ReactNode; disabled?: boolean }) {
+  return (
+    <button disabled={disabled} type="button" className="focus-ring inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-muted shadow-sm transition hover:-translate-y-0.5 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-45">
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function OptionCard({ label, title, value, recommended }: { label: string; title: string; value: string; recommended: boolean }) {
+  return (
+    <div className={`rounded-2xl border p-4 ${recommended ? "border-moss/30 bg-sage shadow-sm" : "border-line bg-cream"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted">{label}</span>
+        {recommended ? <StatusBadge value="READY" /> : null}
+      </div>
+      <div className="mt-3 text-base font-bold">{title}</div>
+      <div className="mt-1 text-2xl font-bold text-moss">{value}</div>
+    </div>
+  );
+}
+
+function Initials({ name, small = false }: { name: string; small?: boolean }) {
+  const initials = name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "PT";
+  return <span className={`flex shrink-0 items-center justify-center rounded-2xl bg-moss text-sm font-bold text-white shadow-sm ring-4 ring-moss/10 ${small ? "h-9 w-9" : "h-16 w-16 text-lg"}`}>{initials}</span>;
 }
 
 function Empty({ text }: { text: string }) {
@@ -527,6 +633,28 @@ function patientStatus(patient: Patient) {
   if (patient.output_documents.some((output) => output.doc_type === "SUMMARY")) return { label: "Summary ready", value: "READY" };
   if (patient.source_documents.some((source) => source.file_type === "INTAKE")) return { label: "New intake", value: "PENDING" };
   return { label: "Inactive", value: "INACTIVE" };
+}
+
+function shortMrn(patient: Patient) {
+  return `MRN-${patient.id.slice(0, 6).toUpperCase()}`;
+}
+
+function recentActivity(patient: Patient) {
+  const latest = [...patient.output_documents].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  if (latest) return `${latest.doc_type.replace("_", " ")} ${latest.status.toLowerCase()}`;
+  const source = [...patient.source_documents].sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at))[0];
+  if (source) return `${source.file_type.replace("_", " ")} received`;
+  return "No recent activity";
+}
+
+function documentLabel(source: SourceDocument) {
+  const labels: Record<string, string> = {
+    INTAKE: "Intake packet",
+    ASSESSMENT: "Assessment / rating scale",
+    ZOOM_NOTE: "Zoom note",
+    UNKNOWN: "Unclassified document"
+  };
+  return labels[source.file_type] || "Clinical document";
 }
 
 function latestSource(patient: Patient, type: string) {
