@@ -2,7 +2,9 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from .billing import ALLOWED_CPT_CODES, APPROVED_PAYERS
-from .models import AppSetting, BillingRule, ClassificationRule, DocumentTemplate, ReimbursementRate, ServiceType
+from .models import AppSetting, BillingRule, ClassificationRule, DocumentTemplate, ReimbursementRate, ServiceType, User
+from .auth import hash_password
+from .config import get_settings
 
 
 DEFAULT_SERVICE_TYPES = ["Psychiatric Evaluation", "Psychotherapy", "Medication Management", "Follow-up", "Crisis"]
@@ -25,6 +27,7 @@ DEFAULT_APP_SETTINGS = {
     "default_payer": {"payer": "Aetna"},
     "workflow_defaults": {"summary_auto_save_pdf": True, "session_note_default_mode": "draft", "treatment_plan_default_mode": "draft", "review_required": True},
     "drive_scan_interval": {"seconds": 300},
+    "enable_safer_preview_flow": {"enabled": True},
 }
 DEFAULT_TEMPLATES = [
     ("SUMMARY", "Clinical Summary", "Clinical_Summary_Template.html", "dollar", {"remove_not_documented_lines": False, "strip_instruction_blocks": True}),
@@ -34,6 +37,7 @@ DEFAULT_TEMPLATES = [
 
 
 def seed_admin_defaults(db: Session) -> None:
+    settings = get_settings()
     if not db.query(ServiceType).first():
         for index, name in enumerate(DEFAULT_SERVICE_TYPES):
             db.add(ServiceType(name=name, display_order=index))
@@ -64,3 +68,17 @@ def seed_admin_defaults(db: Session) -> None:
             for code in sorted(ALLOWED_CPT_CODES):
                 db.add(ReimbursementRate(payer_name=payer, cpt_code=code, amount=0, is_active=False, notes="Set exact contracted reimbursement before production use."))
     db.commit()
+
+
+def seed_bootstrap_admin(db: Session) -> User | None:
+    settings = get_settings()
+    if not settings.admin_email or not settings.admin_password:
+        return None
+    user = db.query(User).filter(User.email == settings.admin_email).first()
+    if user:
+        return user
+    user = User(email=settings.admin_email, password_hash=hash_password(settings.admin_password), role="ADMIN")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user

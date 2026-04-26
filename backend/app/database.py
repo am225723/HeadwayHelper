@@ -13,7 +13,7 @@ def _connect_args(url: str) -> dict:
 
 
 settings = get_settings()
-engine = create_engine(settings.database_url, connect_args=_connect_args(settings.database_url))
+engine = create_engine(settings.sync_database_url, connect_args=_connect_args(settings.sync_database_url))
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 

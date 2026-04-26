@@ -118,6 +118,19 @@ export type AdminConfig = {
   templates: AdminTemplate[];
 };
 
+export type HealthStatus = {
+  status: string;
+  [key: string]: unknown;
+};
+
+export type DiagnosticsStatus = {
+  app: HealthStatus;
+  db: HealthStatus;
+  drive: HealthStatus;
+  ai: HealthStatus;
+  templates: HealthStatus;
+};
+
 export async function apiFetch<T>(path: string, token: string | null, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -129,7 +142,7 @@ export async function apiFetch<T>(path: string, token: string | null, options: R
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || "Request failed");
+    throw new Error(error.detail || `${response.status} ${response.statusText}` || "Request failed");
   }
   return response.json();
 }

@@ -5,7 +5,7 @@ import { LockKeyhole } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 
 export function LoginPanel({ onToken }: { onToken: (token: string) => void }) {
-  const [email, setEmail] = useState("admin@example.com");
+  const [email, setEmail] = useState("support@drzelisko.com");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 

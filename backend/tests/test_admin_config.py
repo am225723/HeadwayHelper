@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.admin_defaults import seed_admin_defaults
+from app.config import get_settings
 from app.drive import classify_file
 from app.main import app
 from app.models import ClassificationRule, DocumentTemplate, DocumentType, FileType, Patient, SourceDocument, TemplateRenderLog
@@ -150,7 +151,9 @@ def test_pdf_rendering_has_no_raw_placeholders_or_ai_instructions():
     assert b"AI:" not in pdf
 
 
-def test_generation_stores_template_render_log(db_session):
+def test_generation_stores_template_render_log(db_session, monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "local")
+    get_settings.cache_clear()
     seed_admin_defaults(db_session)
     patient = Patient(name="Jane Doe", drive_folder_id="folder")
     db_session.add(patient)
@@ -163,3 +166,4 @@ def test_generation_stores_template_render_log(db_session):
     assert log is not None
     assert log.document_type == DocumentType.SUMMARY.value
     assert log.render_context_snapshot_json
+    get_settings.cache_clear()

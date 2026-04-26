@@ -8,7 +8,9 @@ client = TestClient(app)
 
 
 def test_health():
-    assert client.get("/api/health").json() == {"status": "ok"}
+    data = client.get("/api/health").json()
+    assert data["status"] == "ok"
+    assert data["app"] == "Clinical AI Webapp"
 
 
 def test_auth_patient_flow():
@@ -25,6 +27,10 @@ def test_auth_patient_flow():
     assert created.status_code == 201
     patients = client.get("/api/patients", headers=headers)
     assert patients.status_code == 200
+    me = client.get("/api/auth/me", headers=headers)
+    assert me.status_code == 200
+    logout = client.post("/api/auth/logout", headers=headers)
+    assert logout.status_code == 200
 
 
 def test_auth_role_restrictions():

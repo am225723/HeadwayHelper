@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { LoginPanel } from "@/components/login-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { AdminConfig, API_BASE, BillingComparison, BillingSummary, CurrentUser, Patient, SourceDocument, TemplatePreview, apiFetch } from "@/lib/api";
+import { AdminConfig, API_BASE, BillingComparison, BillingSummary, CurrentUser, DiagnosticsStatus, Patient, SourceDocument, TemplatePreview, apiFetch } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 
 type GenerateFn = (path: string, body: object) => Promise<void>;
@@ -47,6 +47,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsStatus | null>(null);
 
   useEffect(() => {
     setToken(localStorage.getItem("clinical-ai-token"));
@@ -60,10 +61,17 @@ export default function Home() {
       const user = await apiFetch<CurrentUser>("/me", nextToken);
       setPatients(data.items);
       setCurrentUser(user);
-      if (user.role === "ADMIN") setAdminConfig(await loadAdminConfig(nextToken));
+      if (user.role === "ADMIN") {
+        setAdminConfig(await loadAdminConfig(nextToken));
+        setDiagnostics(await loadDiagnostics());
+      }
       if (!selectedId && data.items[0]) setSelectedId(data.items[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load patients");
+      if (err instanceof Error && /validate credentials|401|Unauthorized/i.test(err.message)) {
+        localStorage.removeItem("clinical-ai-token");
+        setToken(null);
+      }
     }
   }
 
@@ -137,9 +145,19 @@ export default function Home() {
 
   const billingCodesOnly = billing ? `ICD-10 Codes: ${billing.icd10_codes}\nCPT Codes: ${billing.cpt_codes}` : "";
 
+  function logout() {
+    localStorage.removeItem("clinical-ai-token");
+    setToken(null);
+    setCurrentUser(null);
+    setAdminConfig(null);
+    setDiagnostics(null);
+    setPatients([]);
+    setSelectedId(null);
+  }
+
   return (
     <main className="min-h-screen text-ink">
-      <AppHeader pendingReviewCount={pendingReviewCount} patientCount={patients.length} signedIn={Boolean(token)} />
+      <AppHeader pendingReviewCount={pendingReviewCount} patientCount={patients.length} signedIn={Boolean(token)} user={currentUser} onLogout={logout} />
       <WorkspaceStatusBar signedIn={Boolean(token)} patientCount={patients.length} pendingReviewCount={pendingReviewCount} />
       {!token ? <LoginPanel onToken={(value) => { setToken(value); load(value); }} /> : null}
       {error ? <div className="mx-auto mt-5 max-w-7xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">{error}</div> : null}
@@ -169,7 +187,7 @@ export default function Home() {
           ) : (
             <EmptyWorkspaceState />
           )}
-          {currentUser?.role === "ADMIN" && adminConfig && token ? <AdminSettingsPanel config={adminConfig} token={token} onConfig={setAdminConfig} /> : null}
+          {currentUser?.role === "ADMIN" && adminConfig && token ? <AdminSettingsPanel config={adminConfig} token={token} diagnostics={diagnostics} onConfig={setAdminConfig} onDiagnostics={setDiagnostics} /> : null}
         </section>
       </section>
     </main>
@@ -188,7 +206,19 @@ async function loadAdminConfig(token: string): Promise<AdminConfig> {
   return { rates, billingRules, serviceTypes, classificationRules, settings, templates };
 }
 
-function AppHeader({ pendingReviewCount, patientCount, signedIn }: { pendingReviewCount: number; patientCount: number; signedIn: boolean }) {
+async function loadDiagnostics(): Promise<DiagnosticsStatus> {
+  const rootBase = API_BASE.replace(/\/api$/, "");
+  const [app, db, drive, ai, templates] = await Promise.all([
+    fetch(`${rootBase}/health`).then((response) => response.json()),
+    fetch(`${rootBase}/health/db`).then((response) => response.json()),
+    fetch(`${rootBase}/health/drive`).then((response) => response.json()),
+    fetch(`${rootBase}/health/ai`).then((response) => response.json()),
+    fetch(`${rootBase}/health/templates`).then((response) => response.json())
+  ]);
+  return { app, db, drive, ai, templates };
+}
+
+function AppHeader({ pendingReviewCount, patientCount, signedIn, user, onLogout }: { pendingReviewCount: number; patientCount: number; signedIn: boolean; user: CurrentUser | null; onLogout: () => void }) {
   return (
     <header className="relative overflow-hidden border-b border-line/80 bg-cream/90 backdrop-blur">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(49,95,76,0.12),transparent_28rem),radial-gradient(circle_at_90%_0%,rgba(201,111,85,0.10),transparent_22rem)]" />
@@ -210,7 +240,8 @@ function AppHeader({ pendingReviewCount, patientCount, signedIn }: { pendingRevi
           <HeaderChip icon={<FolderSync size={15} />} label="Drive sync ready" tone="green" />
           <HeaderChip icon={<NotebookPen size={15} />} label={`${pendingReviewCount} pending review`} tone={pendingReviewCount ? "amber" : "green"} />
           <HeaderChip icon={<ShieldCheck size={15} />} label={signedIn ? "Secure workspace" : "Sign-in required"} tone="neutral" />
-          <HeaderChip icon={<UserRound size={15} />} label={signedIn ? "Clinical admin" : `${patientCount} patients`} tone="neutral" />
+          <HeaderChip icon={<UserRound size={15} />} label={signedIn ? user?.email || "Signed in" : `${patientCount} patients`} tone="neutral" />
+          {signedIn ? <button onClick={onLogout} className="rounded-2xl border border-line bg-white/85 px-3.5 py-2.5 text-xs font-semibold text-muted shadow-sm transition hover:bg-white hover:text-ink">Logout</button> : null}
         </div>
       </div>
     </header>
@@ -562,14 +593,23 @@ function ReimbursementComparisonCard({ rows }: { rows: BillingComparison[] }) {
   );
 }
 
-function AdminSettingsPanel({ config, token, onConfig }: { config: AdminConfig; token: string; onConfig: (config: AdminConfig) => void }) {
+function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostics }: { config: AdminConfig; token: string; diagnostics: DiagnosticsStatus | null; onConfig: (config: AdminConfig) => void; onDiagnostics: (status: DiagnosticsStatus) => void }) {
   const activeRates = config.rates.filter((rate) => rate.is_active);
   const inactiveRates = config.rates.length - activeRates.length;
   const [message, setMessage] = useState<string | null>(null);
 
   async function refresh(nextMessage?: string) {
     onConfig(await loadAdminConfig(token));
+    onDiagnostics(await loadDiagnostics());
     setMessage(nextMessage || null);
+  }
+
+  async function toggleSaferPreview(enabled: boolean) {
+    await apiFetch("/admin/settings/enable_safer_preview_flow", token, {
+      method: "PUT",
+      body: JSON.stringify({ setting_value_json: { enabled }, description: "Requires preview review before final PDF generation when enabled." })
+    });
+    await refresh(`Safer preview flow ${enabled ? "enabled" : "disabled"}.`);
   }
 
   async function saveRate(event: FormEvent<HTMLFormElement>, rateId: string) {
@@ -683,6 +723,8 @@ function AdminSettingsPanel({ config, token, onConfig }: { config: AdminConfig; 
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-2">
+        <AdminDiagnosticsPanel diagnostics={diagnostics} onRefresh={async () => onDiagnostics(await loadDiagnostics())} />
+        <SaferPreviewToggle settings={config.settings} onToggle={toggleSaferPreview} />
         <AdminRatesEditor rates={config.rates} onCreate={createRate} onSave={saveRate} />
         <AdminServiceTypesEditor serviceTypes={config.serviceTypes} onCreate={createServiceType} onSave={saveServiceType} />
         <AdminClassificationEditor rules={config.classificationRules} onCreate={createClassificationRule} onSave={saveClassificationRule} />
@@ -864,6 +906,53 @@ function AdminTemplatePreview({ templates, token }: { templates: AdminConfig["te
           ) : null}
         </div>
       ) : <Empty text="No templates registered yet." />}
+    </Card>
+  );
+}
+
+function AdminDiagnosticsPanel({ diagnostics, onRefresh }: { diagnostics: DiagnosticsStatus | null; onRefresh: () => Promise<void> }) {
+  const rows = diagnostics ? [
+    ["App", diagnostics.app],
+    ["DB", diagnostics.db],
+    ["Drive", diagnostics.drive],
+    ["AI", diagnostics.ai],
+    ["Templates", diagnostics.templates]
+  ] as const : [];
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <SectionHeader title="System health" subtitle="Deployment diagnostics for API, DB, Drive, AI, and templates." />
+        <button onClick={onRefresh} className="rounded-xl border border-line bg-white px-3 py-2 text-xs font-bold text-moss shadow-sm transition hover:bg-sage">Refresh</button>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {rows.map(([label, status]) => (
+          <div key={label} className="grid grid-cols-[96px_120px_minmax(0,1fr)] gap-3 rounded-2xl border border-line bg-cream p-3 text-xs">
+            <span className="font-bold">{label}</span>
+            <StatusBadge value={String(status.status).toLowerCase() === "ok" ? "READY" : "PENDING"} />
+            <span className="truncate text-muted">{JSON.stringify(status).slice(0, 160)}</span>
+          </div>
+        ))}
+        {!diagnostics ? <Empty text="Diagnostics have not loaded yet." /> : null}
+      </div>
+    </Card>
+  );
+}
+
+function SaferPreviewToggle({ settings, onToggle }: { settings: AdminConfig["settings"]; onToggle: (enabled: boolean) => Promise<void> }) {
+  const setting = settings.find((item) => item.setting_key === "enable_safer_preview_flow");
+  const enabled = Boolean(setting?.setting_value_json?.enabled ?? true);
+  return (
+    <Card>
+      <SectionHeader title="Safer preview flow" subtitle="Require raw HTML, cleaned HTML, placeholder diagnostics, and PDF preview before finalizing outputs." />
+      <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-line bg-cream p-4">
+        <div>
+          <div className="text-sm font-bold">{enabled ? "Enabled" : "Disabled"}</div>
+          <p className="mt-1 text-xs text-muted">Backend-managed runtime setting.</p>
+        </div>
+        <button onClick={() => onToggle(!enabled)} className={`rounded-xl px-4 py-2 text-xs font-bold shadow-sm transition ${enabled ? "border border-line bg-white text-moss hover:bg-sage" : "bg-moss text-white hover:bg-moss/90"}`}>
+          {enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
     </Card>
   );
 }

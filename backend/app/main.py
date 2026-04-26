@@ -1,13 +1,15 @@
 import csv
 import json
+import logging
 from io import StringIO
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload
 
 from .auth import create_access_token, get_current_user, hash_password, require_roles, verify_password
-from .admin_defaults import seed_admin_defaults
+from .admin_defaults import seed_admin_defaults, seed_bootstrap_admin
 from .config import get_settings
 from .database import Base, SessionLocal, engine, get_db
 from .billing import BillingInput, psychiatric_evaluation_comparison
@@ -55,16 +57,27 @@ from .schemas import (
     UserRegister,
 )
 
+logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
 ensure_sqlite_admin_columns(engine)
-seed_db = SessionLocal()
-try:
-    seed_admin_defaults(seed_db)
-finally:
-    seed_db.close()
 settings = get_settings()
-app = FastAPI(title="Clinical AI Webapp", version="0.1.0")
+if settings.run_seeds_on_startup or settings.app_env.lower() == "development":
+    seed_db = SessionLocal()
+    try:
+        seed_admin_defaults(seed_db)
+        if settings.run_seeds_on_startup:
+            seed_bootstrap_admin(seed_db)
+    except Exception:
+        logger.exception("Startup seed failed")
+        if settings.app_env.lower() == "production":
+            raise
+    finally:
+        seed_db.close()
+for warning in settings.startup_warnings():
+    logger.warning("Configuration warning: %s", warning)
+
+app = FastAPI(title=settings.app_name, version="0.1.0", debug=settings.debug)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -74,13 +87,78 @@ app.add_middleware(
 )
 
 
+def _health_disabled() -> dict | None:
+    return None if settings.enable_healthchecks else {"status": "disabled"}
+
+
+@app.get("/health")
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok"}
+    disabled = _health_disabled()
+    if disabled:
+        return disabled
+    return {"status": "ok", "app": settings.app_name, "environment": settings.app_env, "version": "0.1.0", "warnings": settings.startup_warnings()}
+
+
+@app.get("/health/db")
+def health_db(db: Session = Depends(get_db)) -> dict:
+    disabled = _health_disabled()
+    if disabled:
+        return disabled
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "reachable", "url_kind": "postgres" if "postgres" in settings.database_url else "sqlite"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+@app.get("/health/drive")
+def health_drive() -> dict:
+    disabled = _health_disabled()
+    if disabled:
+        return disabled
+    configured = bool(settings.google_service_account_json and settings.google_drive_root_folder_id)
+    return {"status": "ok" if configured else "not_configured", "credentials_loaded": bool(settings.google_service_account_json), "root_folder_configured": bool(settings.google_drive_root_folder_id)}
+
+
+@app.get("/health/ai")
+def health_ai() -> dict:
+    disabled = _health_disabled()
+    if disabled:
+        return disabled
+    provider = settings.ai_provider.lower()
+    key_present = {
+        "perplexity": bool(settings.perplexity_api_key),
+        "gemini": bool(settings.gemini_api_key),
+        "openai": bool(settings.openai_api_key),
+        "local": True,
+    }.get(provider, False)
+    return {
+        "status": "ok" if key_present else "not_configured",
+        "provider": provider,
+        "api_key_present": key_present,
+        "perplexity_replacement_key_prompt": settings.perplexity_fallback_prompt_for_new_key,
+        "gemini_fallback_configured": bool(settings.gemini_api_key),
+    }
+
+
+@app.get("/health/templates")
+def health_templates(db: Session = Depends(get_db)) -> dict:
+    disabled = _health_disabled()
+    if disabled:
+        return disabled
+    rows = db.query(DocumentTemplate).filter(DocumentTemplate.is_active.is_(True)).all()
+    return {
+        "status": "ok" if rows else "not_configured",
+        "active_templates": len(rows),
+        "templates": [{"document_type": row.document_type, "template_name": row.template_name, "placeholders": len(extract_placeholders(row.template_source)), "version": row.version} for row in rows],
+    }
 
 
 @app.post("/api/auth/register", response_model=UserOut, status_code=201)
 def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
+    if settings.app_env.lower() == "production" and db.query(User).count() > 0:
+        raise HTTPException(status_code=403, detail="Registration is disabled outside controlled setup")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already exists")
     user = User(email=payload.email, password_hash=hash_password(payload.password), role=payload.role)
@@ -94,8 +172,19 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
+        logger.warning("Auth failure for email=%s", payload.email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return Token(access_token=create_access_token(user.id, user.role))
+
+
+@app.post("/api/auth/logout")
+def logout() -> dict:
+    return {"message": "Logged out"}
+
+
+@app.get("/api/auth/me", response_model=UserOut)
+def auth_me(user: User = Depends(get_current_user)) -> User:
+    return user
 
 
 @app.get("/api/me", response_model=UserOut)
