@@ -15,7 +15,7 @@ from .database import Base, SessionLocal, engine, get_db
 from .billing import BillingInput, psychiatric_evaluation_comparison
 from .drive import get_drive_service, grouped_sources, sync_all_patient_folders, sync_patient_files
 from .generation import create_billing_for_output, dispatch_new_sources, generate_session_note, generate_summary, generate_treatment_plan
-from .models import AppSetting, BillingRule, BillingSummary, ClassificationRule, ConfigChangeLog, DocumentTemplate, DocumentType, OutputDocument, OutputStatus, Patient, ReimbursementRate, ReviewStatus, ReviewStatusValue, Role, ServiceType, SourceDocument, User
+from .models import AppSetting, AuthAuditLog, BillingRule, BillingSummary, ClassificationRule, ConfigChangeLog, DocumentTemplate, DocumentType, OutputDocument, OutputStatus, Patient, ReimbursementRate, ReviewStatus, ReviewStatusValue, Role, ServiceType, SourceDocument, User
 from .pdf import html_to_pdf_bytes
 from .schema_compat import ensure_sqlite_admin_columns
 from .templates import extract_placeholders, placeholder_counts, render_template_source, render_template_source_with_diagnostics
@@ -161,7 +161,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=403, detail="Registration is disabled outside controlled setup")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already exists")
-    user = User(email=payload.email, password_hash=hash_password(payload.password), role=payload.role)
+    user = User(email=payload.email, password_hash=hash_password(payload.password), role=payload.role, is_active=True)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -171,9 +171,13 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
 @app.post("/api/auth/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
     user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not verify_password(payload.password, user.password_hash):
+    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         logger.warning("Auth failure for email=%s", payload.email)
+        db.add(AuthAuditLog(email=payload.email, event_type="login", success=False, detail="Invalid credentials or inactive account"))
+        db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    db.add(AuthAuditLog(email=payload.email, event_type="login", success=True, detail="Login successful"))
+    db.commit()
     return Token(access_token=create_access_token(user.id, user.role))
 
 
@@ -202,6 +206,18 @@ def patient_or_404(db: Session, patient_id: str) -> Patient:
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
     return patient
+
+
+def safer_preview_enabled(db: Session) -> bool:
+    row = db.query(AppSetting).filter(AppSetting.setting_key == "enable_safer_preview_flow").first()
+    if row:
+        return bool(row.setting_value_json.get("enabled", settings.enable_safer_preview_flow))
+    return settings.enable_safer_preview_flow
+
+
+def enforce_preview_gate(payload: object, db: Session) -> None:
+    if getattr(payload, "save_pdf", False) and safer_preview_enabled(db) and not getattr(payload, "preview_approved", False):
+        raise HTTPException(status_code=409, detail="Safer preview flow is enabled. Preview and approve the render before final PDF generation.")
 
 
 @app.get("/api/patients", response_model=PatientList)
@@ -256,6 +272,7 @@ def update_classification(source_id: str, payload: ClassificationUpdate, db: Ses
 
 @app.post("/api/patients/{patient_id}/generate/summary", response_model=GenerateResponse, status_code=202)
 def route_generate_summary(patient_id: str, payload: GenerateSummaryRequest, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN, Role.PROVIDER))) -> GenerateResponse:
+    enforce_preview_gate(payload, db)
     patient = patient_or_404(db, patient_id)
     try:
         output = generate_summary(db, patient, payload.save_pdf)
@@ -266,6 +283,7 @@ def route_generate_summary(patient_id: str, payload: GenerateSummaryRequest, db:
 
 @app.post("/api/patients/{patient_id}/generate/session-note", response_model=GenerateResponse, status_code=202)
 def route_generate_session_note(patient_id: str, payload: GenerateSessionNoteRequest, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN, Role.PROVIDER))) -> GenerateResponse:
+    enforce_preview_gate(payload, db)
     patient = patient_or_404(db, patient_id)
     try:
         output = generate_session_note(db, patient, payload.source_document_id, payload.save_pdf)
@@ -276,6 +294,7 @@ def route_generate_session_note(patient_id: str, payload: GenerateSessionNoteReq
 
 @app.post("/api/patients/{patient_id}/generate/treatment-plan", response_model=GenerateResponse, status_code=202)
 def route_generate_treatment_plan(patient_id: str, payload: GenerateTreatmentPlanRequest, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN, Role.PROVIDER))) -> GenerateResponse:
+    enforce_preview_gate(payload, db)
     patient = patient_or_404(db, patient_id)
     try:
         output = generate_treatment_plan(db, patient, payload.save_pdf)

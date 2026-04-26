@@ -14,6 +14,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.add_column("users", sa.Column("full_name", sa.String(255), nullable=True))
+    op.add_column("users", sa.Column("is_active", sa.Boolean(), server_default=sa.true()))
     op.add_column("output_documents", sa.Column("source_document_id", sa.String(36), sa.ForeignKey("source_documents.id"), nullable=True))
     op.add_column("output_documents", sa.Column("structured_data", sa.JSON(), nullable=True))
     op.create_table("reimbursement_rates", sa.Column("id", sa.String(36), primary_key=True), sa.Column("payer_name", sa.String(255), nullable=False), sa.Column("cpt_code", sa.String(20), nullable=False), sa.Column("amount", sa.Float(), nullable=False), sa.Column("is_active", sa.Boolean()), sa.Column("notes", sa.Text()), sa.Column("created_by", sa.String(255)), sa.Column("updated_by", sa.String(255)), sa.Column("created_at", sa.DateTime(timezone=True)), sa.Column("updated_at", sa.DateTime(timezone=True)))
@@ -52,10 +54,16 @@ def upgrade() -> None:
         sa.Column("changed_at", sa.DateTime(timezone=True)),
     )
     op.create_index("ix_config_change_log_type_key", "config_change_log", ["config_type", "config_key"])
+    op.create_table("auth_audit_log", sa.Column("id", sa.String(36), primary_key=True), sa.Column("email", sa.String(255), nullable=False), sa.Column("event_type", sa.String(80), nullable=False), sa.Column("success", sa.Boolean()), sa.Column("detail", sa.Text()), sa.Column("created_at", sa.DateTime(timezone=True)))
+    op.create_index("ix_auth_audit_log_email", "auth_audit_log", ["email"])
+    op.create_table("seed_runs", sa.Column("id", sa.String(36), primary_key=True), sa.Column("seed_key", sa.String(120), nullable=False), sa.Column("status", sa.String(50), nullable=False), sa.Column("detail_json", sa.JSON()), sa.Column("created_at", sa.DateTime(timezone=True)))
+    op.create_index("ix_seed_runs_seed_key", "seed_runs", ["seed_key"])
 
 
 def downgrade() -> None:
-    for table in ["config_change_log", "template_render_logs", "document_templates", "app_settings", "classification_rules", "service_types", "billing_rules", "reimbursement_rates"]:
+    for table in ["seed_runs", "auth_audit_log", "config_change_log", "template_render_logs", "document_templates", "app_settings", "classification_rules", "service_types", "billing_rules", "reimbursement_rates"]:
         op.drop_table(table)
+    op.drop_column("users", "is_active")
+    op.drop_column("users", "full_name")
     op.drop_column("output_documents", "structured_data")
     op.drop_column("output_documents", "source_document_id")

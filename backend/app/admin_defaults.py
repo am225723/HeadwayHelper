@@ -77,7 +77,7 @@ def seed_bootstrap_admin(db: Session) -> User | None:
     user = db.query(User).filter(User.email == settings.admin_email).first()
     if user:
         return user
-    user = User(email=settings.admin_email, password_hash=hash_password(settings.admin_password), role="ADMIN")
+    user = User(email=settings.admin_email, password_hash=hash_password(settings.admin_password), full_name=settings.admin_full_name, role="ADMIN", is_active=True)
     db.add(user)
     db.commit()
     db.refresh(user)

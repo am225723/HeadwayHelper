@@ -45,7 +45,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError as exc:
         raise credentials_error from exc
     user = db.get(User, user_id)
-    if not user:
+    if not user or not user.is_active:
         raise credentials_error
     return user
 

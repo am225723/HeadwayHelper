@@ -5,6 +5,10 @@ from sqlalchemy import Engine, text
 
 
 SQLITE_ADMIN_COLUMNS = {
+    "users": {
+        "full_name": "VARCHAR(255)",
+        "is_active": "BOOLEAN DEFAULT 1",
+    },
     "reimbursement_rates": {
         "created_by": "VARCHAR(255)",
         "updated_by": "VARCHAR(255)",
@@ -50,6 +54,10 @@ def ensure_sqlite_admin_columns(engine: Engine) -> None:
                     conn.execute(text(f"UPDATE {table} SET created_at = :now WHERE created_at IS NULL"), {"now": now})
                 if "version" in columns:
                     conn.execute(text(f"UPDATE {table} SET version = 1 WHERE version IS NULL"))
+        if "users" in existing_tables:
+            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+            if "is_active" in columns:
+                conn.execute(text("UPDATE users SET is_active = 1 WHERE is_active IS NULL"))
 
 
 def jsonable(value: object) -> dict | None:

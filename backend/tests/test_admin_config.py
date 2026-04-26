@@ -139,6 +139,21 @@ def test_template_preview_placeholder_pdf_endpoints():
     assert pdf.content.startswith(b"%PDF")
 
 
+def test_safer_preview_gate_blocks_final_pdf_until_approved():
+    headers = _login("ADMIN")
+    suffix = uuid4().hex
+    created = client.post("/api/patients", json={"name": "Preview Gate", "drive_folder_id": f"preview-{suffix}"}, headers=headers)
+    patient_id = created.json()["id"]
+    resync = client.post(
+        f"/api/patients/{patient_id}/sources/resync",
+        headers=headers,
+        json={"files": [{"id": f"preview-intake-{suffix}", "name": "Headway Intake.pdf"}]},
+    )
+    assert resync.status_code == 202
+    blocked = client.post(f"/api/patients/{patient_id}/generate/summary", headers=headers, json={"save_pdf": True})
+    assert blocked.status_code == 409
+
+
 def test_pdf_rendering_has_no_raw_placeholders_or_ai_instructions():
     html = render_template_source(
         "<h1>$$PATIENT_NAME$$</h1><p>[AI: hidden]</p>",

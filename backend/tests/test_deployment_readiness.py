@@ -3,8 +3,9 @@ from sqlalchemy.orm import sessionmaker
 
 from app.admin_defaults import seed_bootstrap_admin
 from app.config import Settings, get_settings
-from app.database import Base
+from app.database import Base, SessionLocal
 from app.main import app
+from app.models import User
 from app.seed import run_seed
 
 
@@ -31,6 +32,8 @@ def test_bootstrap_admin_creation_is_idempotent(monkeypatch):
         first = seed_bootstrap_admin(db)
         second = seed_bootstrap_admin(db)
         assert first.email == "support@drzelisko.com"
+        assert first.full_name == "Aleixander Puerta"
+        assert first.is_active is True
         assert second.id == first.id
     finally:
         db.close()
@@ -50,3 +53,20 @@ def test_seed_command_runs_idempotently():
     second = run_seed("settings")
     assert first["defaults"] == "seeded"
     assert second["defaults"] == "seeded"
+
+
+def test_inactive_user_cannot_login():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    email = "inactive@example.com"
+    password = "long-password"
+    client.post("/api/auth/register", json={"email": email, "password": password, "role": "PROVIDER"})
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        user.is_active = False
+        db.commit()
+    finally:
+        db.close()
+    assert client.post("/api/auth/login", json={"email": email, "password": password}).status_code == 401

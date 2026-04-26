@@ -17,6 +17,8 @@ class UserOut(BaseModel):
     id: str
     email: str
     role: str
+    full_name: str | None = None
+    is_active: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -103,15 +105,18 @@ class SourceDocumentsResponse(BaseModel):
 
 class GenerateSummaryRequest(BaseModel):
     save_pdf: bool = False
+    preview_approved: bool = False
 
 
 class GenerateSessionNoteRequest(BaseModel):
     source_document_id: str
     save_pdf: bool = False
+    preview_approved: bool = False
 
 
 class GenerateTreatmentPlanRequest(BaseModel):
     save_pdf: bool = False
+    preview_approved: bool = False
 
 
 class GenerateResponse(BaseModel):

@@ -3,6 +3,7 @@ import logging
 
 from .admin_defaults import seed_admin_defaults, seed_bootstrap_admin
 from .database import Base, SessionLocal, engine
+from .models import SeedRun
 from .schema_compat import ensure_sqlite_admin_columns
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,17 @@ def run_seed(only: str = "all") -> dict:
         if only in {"all", "admin"}:
             user = seed_bootstrap_admin(db)
             result["admin"] = user.email if user else "skipped"
+        db.add(SeedRun(seed_key=only, status="OK", detail_json=result))
+        db.commit()
         return result
     except Exception:
         logger.exception("Seed command failed")
+        try:
+            db.rollback()
+            db.add(SeedRun(seed_key=only, status="ERROR", detail_json={"error": "Seed command failed"}))
+            db.commit()
+        except Exception:
+            logger.exception("Failed to record seed failure")
         raise
     finally:
         db.close()

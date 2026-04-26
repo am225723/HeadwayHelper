@@ -33,6 +33,11 @@ def test_auth_patient_flow():
     assert logout.status_code == 200
 
 
+def test_login_failure_is_rejected():
+    response = client.post("/api/auth/login", json={"email": "missing@example.com", "password": "wrong-password"})
+    assert response.status_code == 401
+
+
 def test_auth_role_restrictions():
     suffix = uuid4().hex
     password = "long-password"
