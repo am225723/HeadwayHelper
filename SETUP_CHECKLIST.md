@@ -23,7 +23,7 @@
 
 4. Bootstrap admin:
    - Default setup env in `backend/.env.example`:
-     - Email: `support@drzelisko.com`
+     - Email: `aleix@drzelisko.com`
      - Password: `Admin123`
      - Name: `Aleixander Puerta`
    - Change the password immediately after first login in any real environment.

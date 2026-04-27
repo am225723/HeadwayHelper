@@ -21,7 +21,7 @@ def test_health_endpoints_return_statuses():
 
 
 def test_bootstrap_admin_creation_is_idempotent(monkeypatch):
-    monkeypatch.setenv("ADMIN_EMAIL", "support@drzelisko.com")
+    monkeypatch.setenv("ADMIN_EMAIL", "aleix@drzelisko.com")
     monkeypatch.setenv("ADMIN_PASSWORD", "Admin123")
     get_settings.cache_clear()
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
@@ -31,7 +31,7 @@ def test_bootstrap_admin_creation_is_idempotent(monkeypatch):
     try:
         first = seed_bootstrap_admin(db)
         second = seed_bootstrap_admin(db)
-        assert first.email == "support@drzelisko.com"
+        assert first.email == "aleix@drzelisko.com"
         assert first.full_name == "Aleixander Puerta"
         assert first.is_active is True
         assert second.id == first.id
