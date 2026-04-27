@@ -25,10 +25,12 @@ button,
 input,
 textarea {
   font: inherit;
+  min-width: 0;
 }
 
 select {
   font: inherit;
+  min-width: 0;
 }
 
 .focus-ring:focus-visible {
@@ -38,6 +40,6 @@ select {
 
 @layer components {
   .admin-input {
-    @apply rounded-xl border border-line bg-white px-3 py-2 text-xs text-ink shadow-sm outline-none transition placeholder:text-muted/50 focus:border-moss/45 focus:ring-4 focus:ring-moss/10;
+    @apply min-w-0 w-full max-w-full rounded-xl border border-line bg-white px-3 py-2 text-xs text-ink shadow-sm outline-none transition placeholder:text-muted/50 focus:border-moss/45 focus:ring-4 focus:ring-moss/10;
   }
 }

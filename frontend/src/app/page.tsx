@@ -787,11 +787,15 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
         {message ? <div className="mt-4 rounded-2xl border border-moss/20 bg-white px-4 py-3 text-sm font-semibold text-moss shadow-sm">{message}</div> : null}
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-5 2xl:grid-cols-2">
         <AdminDiagnosticsPanel diagnostics={diagnostics} onRefresh={async () => onDiagnostics(await loadDiagnostics())} />
         <SaferPreviewToggle settings={config.settings} onToggle={toggleSaferPreview} />
-        <AdminUsersEditor users={config.users} onCreate={createUser} onSave={saveUser} onActive={setUserActive} />
-        <DriveDiscoveryPanel folders={config.drivePatients} onImport={importDriveFolder} onResync={resyncDriveFolder} />
+        <div className="min-w-0 2xl:col-span-2">
+          <AdminUsersEditor users={config.users} onCreate={createUser} onSave={saveUser} onActive={setUserActive} />
+        </div>
+        <div className="min-w-0 2xl:col-span-2">
+          <DriveDiscoveryPanel folders={config.drivePatients} diagnostics={diagnostics} onImport={importDriveFolder} onResync={resyncDriveFolder} />
+        </div>
         <AdminRatesEditor rates={config.rates} onCreate={createRate} onSave={saveRate} />
         <AdminServiceTypesEditor serviceTypes={config.serviceTypes} onCreate={createServiceType} onSave={saveServiceType} />
         <AdminClassificationEditor rules={config.classificationRules} onCreate={createClassificationRule} onSave={saveClassificationRule} />
@@ -805,7 +809,9 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
           subtitle="Production HTML templates and placeholder metadata."
           rows={config.templates.map((template) => [template.document_type, `${template.template_name} v${template.version}`, `${template.placeholders.length} total · ${template.prompt_placeholder_count} prompts`])}
         />
-        <AdminTemplatePreview templates={config.templates} token={token} onRefresh={() => refresh("Templates refreshed.")} />
+        <div className="min-w-0 2xl:col-span-2">
+          <AdminTemplatePreview templates={config.templates} token={token} onRefresh={() => refresh("Templates refreshed.")} />
+        </div>
         <AdminMiniTable
           title="Workflow settings"
           subtitle="Autosave, review, Drive scan, and default payer settings."
@@ -830,34 +836,43 @@ function AdminUsersEditor({
   return (
     <Card>
       <SectionHeader title="Admin users" subtitle="Create provider/admin accounts, reset passwords, and deactivate access after bootstrap." />
-      <form onSubmit={onCreate} className="mt-4 grid gap-2 rounded-2xl border border-line bg-cream p-3 lg:grid-cols-[1fr_1fr_118px_1fr_auto]">
-        <input name="email" required type="email" placeholder="email@practice.com" className="admin-input" />
-        <input name="full_name" placeholder="Full name" className="admin-input" />
-        <select name="role" defaultValue="PROVIDER" className="admin-input">
-          <option>PROVIDER</option>
-          <option>ADMIN</option>
-        </select>
-        <input name="password" required minLength={8} type="password" placeholder="Initial password" className="admin-input" />
-        <button className="rounded-xl bg-moss px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Create</button>
+      <form onSubmit={onCreate} className="mt-4 grid min-w-0 gap-3 rounded-2xl border border-line bg-cream p-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.3fr)_minmax(200px,1fr)_130px_minmax(180px,0.9fr)_auto]">
+        <LabeledControl label="Email"><input name="email" required type="email" placeholder="email@practice.com" className="admin-input" /></LabeledControl>
+        <LabeledControl label="Full name"><input name="full_name" placeholder="Full name" className="admin-input" /></LabeledControl>
+        <LabeledControl label="Role">
+          <select name="role" defaultValue="PROVIDER" className="admin-input">
+            <option>PROVIDER</option>
+            <option>ADMIN</option>
+          </select>
+        </LabeledControl>
+        <LabeledControl label="Password"><input name="password" required minLength={8} type="password" placeholder="Initial password" className="admin-input" /></LabeledControl>
+        <button className="self-end rounded-xl bg-moss px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Create</button>
       </form>
       <div className="mt-4 grid max-h-[440px] gap-2 overflow-auto pr-1">
         {users.map((user) => (
-          <form key={user.id} onSubmit={(event) => onSave(event, user.id)} className="grid gap-2 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm lg:grid-cols-[1fr_1fr_118px_86px_1fr_auto_auto] lg:items-center">
-            <div className="truncate font-bold">{user.email}</div>
-            <input name="full_name" defaultValue={user.full_name || ""} placeholder="Full name" className="admin-input" />
-            <select name="role" defaultValue={user.role} className="admin-input">
-              <option>PROVIDER</option>
-              <option>ADMIN</option>
-            </select>
-            <label className="flex items-center gap-2 font-semibold text-muted">
-              <input name="is_active" type="checkbox" defaultChecked={user.is_active} className="h-4 w-4 accent-moss" />
+          <form key={user.id} onSubmit={(event) => onSave(event, user.id)} className="grid min-w-0 gap-3 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm xl:grid-cols-[minmax(220px,1.2fr)_minmax(190px,1fr)_130px_96px_minmax(160px,0.8fr)_auto] xl:items-end">
+            <div className="min-w-0 self-center">
+              <div className="break-words font-bold text-ink">{user.email}</div>
+              <div className="mt-1 text-muted">{user.is_active ? "Active account" : "Deactivated"}</div>
+            </div>
+            <LabeledControl label="Full name"><input name="full_name" defaultValue={user.full_name || ""} placeholder="Full name" className="admin-input" /></LabeledControl>
+            <LabeledControl label="Role">
+              <select name="role" defaultValue={user.role} className="admin-input">
+                <option>PROVIDER</option>
+                <option>ADMIN</option>
+              </select>
+            </LabeledControl>
+            <label className="flex min-h-10 items-center gap-2 font-semibold text-muted">
+              <input name="is_active" type="checkbox" defaultChecked={user.is_active} className="h-4 w-4 shrink-0 accent-moss" />
               Active
             </label>
-            <input name="password" minLength={8} type="password" placeholder="New password" className="admin-input" />
-            <button className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Save</button>
-            <button type="button" onClick={() => onActive(user.id, !user.is_active)} className="rounded-xl border border-line bg-white px-3 py-2 font-bold text-muted transition hover:bg-cream">
-              {user.is_active ? "Deactivate" : "Activate"}
-            </button>
+            <LabeledControl label="Password"><input name="password" minLength={8} type="password" placeholder="New password" className="admin-input" /></LabeledControl>
+            <div className="flex flex-wrap gap-2">
+              <button className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Save</button>
+              <button type="button" onClick={() => onActive(user.id, !user.is_active)} className="rounded-xl border border-line bg-white px-3 py-2 font-bold text-muted transition hover:bg-cream">
+                {user.is_active ? "Deactivate" : "Activate"}
+              </button>
+            </div>
           </form>
         ))}
         {!users.length ? <Empty text="No admin-managed users yet." /> : null}
@@ -868,22 +883,32 @@ function AdminUsersEditor({
 
 function DriveDiscoveryPanel({
   folders,
+  diagnostics,
   onImport,
   onResync
 }: {
   folders: AdminConfig["drivePatients"];
+  diagnostics: DiagnosticsStatus | null;
   onImport: (folderId: string) => Promise<void>;
   onResync: (folderId: string) => Promise<void>;
 }) {
+  const driveStatus = diagnostics?.drive;
+  const configured = Boolean(driveStatus?.root_folder_configured && driveStatus?.credentials_loaded);
   return (
     <Card>
       <SectionHeader title="Drive patient discovery" subtitle="Browse existing patient folders, detect source documents, and link prior patients into the local workspace." />
+      {!configured ? (
+        <div className="mt-4 rounded-2xl border border-amber/20 bg-amber/10 p-4 text-sm leading-6 text-ink">
+          <div className="font-bold text-amber">Google Drive is not connected in this local run.</div>
+          <p className="mt-1 text-muted">Set `GOOGLE_DRIVE_ROOT_FOLDER_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` for the backend, then restart the API. Drive health currently reports: {driveStatus ? JSON.stringify(driveStatus) : "not loaded"}.</p>
+        </div>
+      ) : null}
       <div className="mt-4 grid max-h-[470px] gap-2 overflow-auto pr-1">
         {folders.map((folder) => (
-          <div key={folder.folder_id} className="grid gap-3 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm xl:grid-cols-[minmax(0,1fr)_180px_auto] xl:items-center">
+          <div key={folder.folder_id} className="grid min-w-0 gap-3 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm xl:grid-cols-[minmax(0,1fr)_180px_auto] xl:items-center">
             <div className="min-w-0">
-              <div className="truncate font-bold text-ink">{folder.folder_name}</div>
-              <div className="mt-1 truncate text-muted">Folder {folder.folder_id} · {folder.file_count} files</div>
+              <div className="break-words font-bold text-ink">{folder.folder_name}</div>
+              <div className="mt-1 break-all text-muted">Folder {folder.folder_id} · {folder.file_count} files</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {["INTAKE", "ASSESSMENT", "ZOOM_NOTE", "OUTPUT", "UNKNOWN"].map((key) => (
                   <span key={key} className="rounded-full border border-line bg-cream px-2.5 py-1 font-semibold text-muted">{key}: {folder.detected_counts?.[key] || 0}</span>
@@ -900,9 +925,18 @@ function DriveDiscoveryPanel({
             </div>
           </div>
         ))}
-        {!folders.length ? <Empty text="No Drive folders returned. Confirm Google Drive service account and root folder configuration." /> : null}
+        {!folders.length ? <Empty text={configured ? "No patient folders were returned from the configured Drive root." : "Connect Google Drive credentials to show current patient folders here."} /> : null}
       </div>
     </Card>
+  );
+}
+
+function LabeledControl({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="grid min-w-0 gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
+      {label}
+      {children}
+    </label>
   );
 }
 
