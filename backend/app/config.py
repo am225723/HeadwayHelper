@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -50,7 +51,7 @@ class Settings(BaseSettings):
     seed_default_templates: bool = True
     reimbursement_table_path: str = "app/reimbursement_rates.example.json"
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=None if os.getenv("VERCEL") else ".env", extra="ignore")
 
     @property
     def cors_origins(self) -> list[str]:
