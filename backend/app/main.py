@@ -18,8 +18,11 @@ from .generation import create_billing_for_output, dispatch_new_sources, generat
 from .models import AppSetting, AuthAuditLog, BillingRule, BillingSummary, ClassificationRule, ConfigChangeLog, DocumentTemplate, DocumentType, OutputDocument, OutputStatus, Patient, ReimbursementRate, ReviewStatus, ReviewStatusValue, Role, ServiceType, SourceDocument, User
 from .pdf import html_to_pdf_bytes
 from .schema_compat import ensure_sqlite_admin_columns
-from .templates import extract_placeholders, placeholder_counts, render_template_source, render_template_source_with_diagnostics
+from .templates import extract_placeholder_inventory, extract_placeholders, load_template, placeholder_counts, render_template_source, render_template_source_with_diagnostics
 from .schemas import (
+    AdminPasswordReset,
+    AdminUserCreate,
+    AdminUserUpdate,
     AppSettingIn,
     AppSettingOut,
     BillingRecalculateRequest,
@@ -33,6 +36,8 @@ from .schemas import (
     ClassificationUpdate,
     DocumentTemplateIn,
     DocumentTemplateOut,
+    DriveImportResponse,
+    DrivePatientFolderOut,
     GenerateResponse,
     GenerateSessionNoteRequest,
     GenerateSummaryRequest,
@@ -51,6 +56,7 @@ from .schemas import (
     TemplatePreviewRequest,
     TemplatePreviewResponse,
     TemplatePlaceholdersResponse,
+    TemplatePlaceholderOut,
     Token,
     UserLogin,
     UserOut,
@@ -151,7 +157,16 @@ def health_templates(db: Session = Depends(get_db)) -> dict:
     return {
         "status": "ok" if rows else "not_configured",
         "active_templates": len(rows),
-        "templates": [{"document_type": row.document_type, "template_name": row.template_name, "placeholders": len(extract_placeholders(row.template_source)), "version": row.version} for row in rows],
+        "templates": [
+            {
+                "document_type": row.document_type,
+                "template_name": row.template_name,
+                "placeholders": len(extract_placeholders(row.template_source)),
+                "prompt_placeholders": len([item for item in extract_placeholder_inventory(row.template_source) if item.placeholder_type == "ai_prompt"]),
+                "version": row.version,
+            }
+            for row in rows
+        ],
     }
 
 
@@ -402,9 +417,77 @@ def admin_drive_sync(db: Session = Depends(get_db), _: User = Depends(require_ro
     return {"message": "Sync completed", "created": len(created), "outputs": outputs}
 
 
+@app.get("/api/admin/drive-patients", response_model=list[DrivePatientFolderOut])
+def admin_drive_patients(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[DrivePatientFolderOut]:
+    drive = get_drive_service()
+    rows: list[DrivePatientFolderOut] = []
+    for folder in drive.list_patient_folders():
+        files = drive.list_files(folder["id"])
+        detected = {"INTAKE": 0, "ASSESSMENT": 0, "ZOOM_NOTE": 0, "UNKNOWN": 0, "OUTPUT": 0}
+        for file in files:
+            name = file.get("name", "")
+            if "output" in name.lower() or name.lower().endswith((".generated.pdf", "-summary.pdf", "-treatment-plan.pdf")):
+                detected["OUTPUT"] += 1
+            else:
+                detected[classify_drive_file(name, db)] += 1
+        patient = db.query(Patient).filter(Patient.drive_folder_id == folder["id"]).first()
+        rows.append(
+            DrivePatientFolderOut(
+                folder_id=folder["id"],
+                folder_name=folder["name"],
+                linked_patient_id=patient.id if patient else None,
+                linked_patient_name=patient.name if patient else None,
+                file_count=len(files),
+                detected_counts=detected,
+                has_intake=detected["INTAKE"] > 0,
+                has_assessments=detected["ASSESSMENT"] > 0,
+                has_zoom_notes=detected["ZOOM_NOTE"] > 0,
+                has_outputs=detected["OUTPUT"] > 0,
+            )
+        )
+    return rows
+
+
+@app.post("/api/admin/drive-patients/{folder_id}/import", response_model=DriveImportResponse)
+def admin_import_drive_patient(folder_id: str, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> DriveImportResponse:
+    drive = get_drive_service()
+    folder = next((item for item in drive.list_patient_folders() if item["id"] == folder_id), None)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Drive patient folder not found")
+    patient = db.query(Patient).filter(Patient.drive_folder_id == folder_id).first()
+    if not patient:
+        patient = Patient(name=folder["name"], drive_folder_id=folder_id)
+        db.add(patient)
+        db.flush()
+        _log_change(db, "drive_patient", folder_id, None, {"patient_name": patient.name, "folder_id": folder_id}, user)
+    else:
+        patient.name = folder["name"]
+    created = sync_patient_files(db, patient, drive.list_files(folder_id), commit=False)
+    db.commit()
+    db.refresh(patient)
+    patient = patient_or_404(db, patient.id)
+    return DriveImportResponse(patient=PatientDetail.model_validate(patient), created_sources=len(created))
+
+
+@app.post("/api/admin/drive-patients/{folder_id}/resync", response_model=DriveImportResponse)
+def admin_resync_drive_patient(folder_id: str, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> DriveImportResponse:
+    return admin_import_drive_patient(folder_id, db, user)
+
+
+def classify_drive_file(name: str, db: Session) -> str:
+    from .drive import classify_file
+
+    return classify_file(name, db).value
+
+
 def _template_out(row: DocumentTemplate) -> DocumentTemplateOut:
     data = DocumentTemplateOut.model_validate(row)
-    data.placeholders = extract_placeholders(row.template_source)
+    inventory = extract_placeholder_inventory(row.template_source)
+    data.placeholders = sorted({item.machine_key for item in inventory})
+    data.placeholder_inventory = [TemplatePlaceholderOut(**item.__dict__) for item in inventory]
+    data.prompt_placeholder_count = len([item for item in inventory if item.placeholder_type == "ai_prompt"])
+    data.mustache_placeholder_count = len([item for item in inventory if item.placeholder_type == "mustache"])
+    data.repeated_placeholder_count = len([item for item in inventory if item.repeat_count > 1])
     return data
 
 
@@ -419,6 +502,85 @@ def _snapshot(row: object) -> dict:
 
 def _log_change(db: Session, config_type: str, config_key: str, previous: dict | None, new: dict | None, user: User) -> None:
     db.add(ConfigChangeLog(config_type=config_type, config_key=config_key, previous_value_json=previous, new_value_json=new, changed_by=user.email))
+
+
+@app.get("/api/admin/users", response_model=list[UserOut])
+def list_admin_users(db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> list[User]:
+    return db.query(User).order_by(User.created_at.desc()).all()
+
+
+@app.post("/api/admin/users", response_model=UserOut, status_code=201)
+def create_admin_user(payload: AdminUserCreate, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> User:
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+    created = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        full_name=payload.full_name,
+        role=payload.role,
+        is_active=payload.is_active,
+    )
+    db.add(created)
+    db.add(AuthAuditLog(email=payload.email, event_type="admin_create_user", success=True, detail=f"Created by {user.email}"))
+    _log_change(db, "user", payload.email, None, {"email": payload.email, "full_name": payload.full_name, "role": payload.role, "is_active": payload.is_active}, user)
+    db.commit()
+    db.refresh(created)
+    return created
+
+
+@app.patch("/api/admin/users/{user_id}", response_model=UserOut)
+def update_admin_user(user_id: str, payload: AdminUserUpdate, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> User:
+    row = db.get(User, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    previous = _snapshot(row)
+    updates = payload.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(row, key, value)
+    db.add(AuthAuditLog(email=row.email, event_type="admin_update_user", success=True, detail=f"Updated by {user.email}"))
+    _log_change(db, "user", row.email, previous, updates, user)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.post("/api/admin/users/{user_id}/reset-password", response_model=UserOut)
+def reset_admin_user_password(user_id: str, payload: AdminPasswordReset, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> User:
+    row = db.get(User, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    row.password_hash = hash_password(payload.password)
+    db.add(AuthAuditLog(email=row.email, event_type="admin_reset_password", success=True, detail=f"Reset by {user.email}"))
+    _log_change(db, "user_password", row.email, {"password_hash": "redacted"}, {"password_hash": "redacted"}, user)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.post("/api/admin/users/{user_id}/activate", response_model=UserOut)
+def activate_admin_user(user_id: str, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> User:
+    return _set_user_active(user_id, True, db, user)
+
+
+@app.post("/api/admin/users/{user_id}/deactivate", response_model=UserOut)
+def deactivate_admin_user(user_id: str, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> User:
+    if user.id == user_id:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own active admin account")
+    return _set_user_active(user_id, False, db, user)
+
+
+def _set_user_active(user_id: str, active: bool, db: Session, actor: User) -> User:
+    row = db.get(User, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    previous = _snapshot(row)
+    row.is_active = active
+    event = "admin_activate_user" if active else "admin_deactivate_user"
+    db.add(AuthAuditLog(email=row.email, event_type=event, success=True, detail=f"Changed by {actor.email}"))
+    _log_change(db, "user", row.email, previous, {"is_active": active}, actor)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 @app.get("/api/admin/reimbursement-rates", response_model=list[ReimbursementRateOut])
@@ -630,12 +792,26 @@ def get_template(template_id: str, db: Session = Depends(get_db), _: User = Depe
     return _template_out(row)
 
 
+@app.post("/api/admin/templates", response_model=DocumentTemplateOut, status_code=201)
+def create_template(payload: DocumentTemplateIn, db: Session = Depends(get_db), user: User = Depends(require_roles(Role.ADMIN))) -> DocumentTemplateOut:
+    if payload.is_active:
+        db.query(DocumentTemplate).filter(DocumentTemplate.document_type == payload.document_type, DocumentTemplate.is_active.is_(True)).update({"is_active": False})
+    row = DocumentTemplate(**payload.model_dump(), updated_by=user.email)
+    db.add(row)
+    _log_change(db, "document_template", f"{row.document_type}:{row.template_name}", None, payload.model_dump(), user)
+    db.commit()
+    db.refresh(row)
+    return _template_out(row)
+
+
 @app.put("/api/admin/templates/{template_id}", response_model=DocumentTemplateOut)
 def update_template(template_id: str, payload: DocumentTemplateIn, db: Session = Depends(get_db), _: User = Depends(require_roles(Role.ADMIN))) -> DocumentTemplateOut:
     row = db.get(DocumentTemplate, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="Template not found")
     previous = _snapshot(row)
+    if payload.is_active:
+        db.query(DocumentTemplate).filter(DocumentTemplate.document_type == payload.document_type, DocumentTemplate.id != row.id, DocumentTemplate.is_active.is_(True)).update({"is_active": False})
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
     row.version = (row.version or 1) + 1
@@ -653,7 +829,16 @@ def get_template_placeholders(template_id: str, db: Session = Depends(get_db), _
         raise HTTPException(status_code=404, detail="Template not found")
     counts = placeholder_counts(row.template_source)
     repeated = {key: count for key, count in counts.items() if count > 1}
-    return TemplatePlaceholdersResponse(template_id=row.id, placeholders=sorted(counts), repeated_placeholders=repeated, placeholder_count=len(counts))
+    inventory = extract_placeholder_inventory(row.template_source)
+    return TemplatePlaceholdersResponse(
+        template_id=row.id,
+        placeholders=sorted(counts),
+        placeholder_inventory=[TemplatePlaceholderOut(**item.__dict__) for item in inventory],
+        repeated_placeholders=repeated,
+        placeholder_count=len(counts),
+        prompt_placeholder_count=len([item for item in inventory if item.placeholder_type == "ai_prompt"]),
+        mustache_placeholder_count=len([item for item in inventory if item.placeholder_type == "mustache"]),
+    )
 
 
 @app.post("/api/admin/templates/{template_id}/preview", response_model=TemplatePreviewResponse)
@@ -664,7 +849,17 @@ def preview_template(template_id: str, payload: TemplatePreviewRequest, db: Sess
     placeholders = extract_placeholders(row.template_source)
     values = {key: payload.values.get(key, f"Sample {key.replace('_', ' ')}") for key in placeholders}
     diagnostics = render_template_source_with_diagnostics(row.template_source, values, row.cleanup_rules_json)
-    return TemplatePreviewResponse(html=diagnostics.html, raw_html=diagnostics.raw_html, placeholders=placeholders, missing_placeholders=diagnostics.missing_placeholders, unreplaced_placeholders=diagnostics.unreplaced_placeholders, cleanup_warnings=diagnostics.cleanup_warnings)
+    return TemplatePreviewResponse(
+        html=diagnostics.html,
+        raw_html=diagnostics.raw_html,
+        placeholders=placeholders,
+        placeholder_inventory=[TemplatePlaceholderOut(**item.__dict__) for item in diagnostics.placeholder_inventory],
+        missing_placeholders=diagnostics.missing_placeholders,
+        unreplaced_placeholders=diagnostics.unreplaced_placeholders,
+        cleanup_warnings=diagnostics.cleanup_warnings,
+        template_id=row.id,
+        template_version=row.version,
+    )
 
 
 @app.post("/api/admin/templates/{template_id}/preview-html", response_model=TemplatePreviewResponse)
@@ -717,6 +912,25 @@ def reset_admin_defaults(group: str, db: Session = Depends(get_db), user: User =
         for category, keyword in DEFAULT_CLASSIFICATION_RULES:
             db.add(ClassificationRule(category=category, keyword_or_pattern=keyword, updated_by=user.email))
         _log_change(db, "classification_rule", "reset", previous, {"count": len(DEFAULT_CLASSIFICATION_RULES)}, user)
+    elif group == "templates":
+        previous = {"count": db.query(DocumentTemplate).count()}
+        for doc_type in DocumentType:
+            source = load_template(doc_type)
+            active = db.query(DocumentTemplate).filter(DocumentTemplate.document_type == doc_type.value, DocumentTemplate.is_active.is_(True)).all()
+            for existing in active:
+                existing.is_active = False
+            row = DocumentTemplate(
+                document_type=doc_type.value,
+                template_name=f"Default {doc_type.value.replace('_', ' ').title()}",
+                template_source=source,
+                placeholder_style="mixed",
+                cleanup_rules_json={"remove_not_documented_lines": doc_type != DocumentType.SUMMARY, "strip_instruction_blocks": True},
+                is_active=True,
+                version=(max([item.version or 1 for item in active], default=0) + 1),
+                updated_by=user.email,
+            )
+            db.add(row)
+        _log_change(db, "document_template", "reset-defaults", previous, {"source": "bundled", "count": len(DocumentType)}, user)
     else:
         raise HTTPException(status_code=404, detail="Unknown defaults group")
     db.commit()

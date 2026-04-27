@@ -19,8 +19,28 @@ class UserOut(BaseModel):
     role: str
     full_name: str | None = None
     is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    full_name: str | None = None
+    role: str = Field(pattern="^(ADMIN|PROVIDER)$")
+    is_active: bool = True
+
+
+class AdminUserUpdate(BaseModel):
+    full_name: str | None = None
+    role: str | None = Field(default=None, pattern="^(ADMIN|PROVIDER)$")
+    is_active: bool | None = None
+
+
+class AdminPasswordReset(BaseModel):
+    password: str = Field(min_length=8)
 
 
 class Token(BaseModel):
@@ -101,6 +121,24 @@ class PatientList(BaseModel):
 class SourceDocumentsResponse(BaseModel):
     patient_id: str
     grouped: dict[str, list[SourceDocumentOut]]
+
+
+class DrivePatientFolderOut(BaseModel):
+    folder_id: str
+    folder_name: str
+    linked_patient_id: str | None = None
+    linked_patient_name: str | None = None
+    file_count: int = 0
+    detected_counts: dict[str, int] = Field(default_factory=dict)
+    has_intake: bool = False
+    has_assessments: bool = False
+    has_zoom_notes: bool = False
+    has_outputs: bool = False
+
+
+class DriveImportResponse(BaseModel):
+    patient: PatientDetail
+    created_sources: int
 
 
 class GenerateSummaryRequest(BaseModel):
@@ -258,6 +296,21 @@ class DocumentTemplateOut(DocumentTemplateIn, AdminBaseModel):
     updated_at: datetime
     updated_by: str | None = None
     placeholders: list[str] = Field(default_factory=list)
+    placeholder_inventory: list["TemplatePlaceholderOut"] = Field(default_factory=list)
+    prompt_placeholder_count: int = 0
+    mustache_placeholder_count: int = 0
+    repeated_placeholder_count: int = 0
+
+
+class TemplatePlaceholderOut(BaseModel):
+    placeholder_type: str
+    machine_key: str
+    prompt_text: str
+    raw_token: str
+    section_name: str | None = None
+    repeat_count: int = 1
+    is_required: bool = False
+    default_missing_behavior: str = "remove_block_if_not_documented"
 
 
 class TemplatePreviewRequest(BaseModel):
@@ -268,16 +321,22 @@ class TemplatePreviewResponse(BaseModel):
     html: str
     raw_html: str | None = None
     placeholders: list[str]
+    placeholder_inventory: list[TemplatePlaceholderOut] = Field(default_factory=list)
     missing_placeholders: list[str] = Field(default_factory=list)
     unreplaced_placeholders: list[str] = Field(default_factory=list)
     cleanup_warnings: list[str] = Field(default_factory=list)
+    template_version: int | None = None
+    template_id: str | None = None
 
 
 class TemplatePlaceholdersResponse(BaseModel):
     template_id: str
     placeholders: list[str]
+    placeholder_inventory: list[TemplatePlaceholderOut] = Field(default_factory=list)
     repeated_placeholders: dict[str, int]
     placeholder_count: int
+    prompt_placeholder_count: int = 0
+    mustache_placeholder_count: int = 0
 
 
 class ConfigChangeLogOut(AdminBaseModel):

@@ -195,15 +195,17 @@ export default function Home() {
 }
 
 async function loadAdminConfig(token: string): Promise<AdminConfig> {
-  const [rates, billingRules, serviceTypes, classificationRules, settings, templates] = await Promise.all([
+  const [rates, billingRules, serviceTypes, classificationRules, settings, templates, users, drivePatients] = await Promise.all([
     apiFetch<AdminConfig["rates"]>("/admin/reimbursement-rates", token),
     apiFetch<AdminConfig["billingRules"]>("/admin/billing-rules", token),
     apiFetch<AdminConfig["serviceTypes"]>("/admin/service-types", token),
     apiFetch<AdminConfig["classificationRules"]>("/admin/classification-rules", token),
     apiFetch<AdminConfig["settings"]>("/admin/settings", token),
-    apiFetch<AdminConfig["templates"]>("/admin/templates", token)
+    apiFetch<AdminConfig["templates"]>("/admin/templates", token),
+    apiFetch<AdminConfig["users"]>("/admin/users", token),
+    apiFetch<AdminConfig["drivePatients"]>("/admin/drive-patients", token).catch(() => [])
   ]);
-  return { rates, billingRules, serviceTypes, classificationRules, settings, templates };
+  return { rates, billingRules, serviceTypes, classificationRules, settings, templates, users, drivePatients };
 }
 
 async function loadDiagnostics(): Promise<DiagnosticsStatus> {
@@ -440,11 +442,24 @@ function PatientOverviewCard({ patient }: { patient: Patient }) {
 }
 
 function QuickActionsCard({ patient, billing, onGenerate, onResync }: { patient: Patient; billing: BillingSummary | null; onGenerate: GenerateFn; onResync: () => Promise<void> }) {
-  const zoom = patient.source_documents.find((doc) => doc.file_type === "ZOOM_NOTE");
+  const zoomNotes = patient.source_documents.filter((doc) => doc.file_type === "ZOOM_NOTE").sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at));
+  const [selectedZoomId, setSelectedZoomId] = useState(zoomNotes[0]?.id || "");
+  const zoom = zoomNotes.find((doc) => doc.id === selectedZoomId) || zoomNotes[0];
+  useEffect(() => {
+    setSelectedZoomId((current) => current || zoomNotes[0]?.id || "");
+  }, [patient.id, zoomNotes[0]?.id]);
   return (
     <Card>
       <SectionHeader eyebrow="Clinical automation" title="Quick actions" subtitle="Generate drafts, review outputs, and prepare billing without leaving the patient cockpit." />
       <div className="mt-4 grid gap-3">
+        {zoomNotes.length ? (
+          <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+            Session note source
+            <select value={zoom?.id || ""} onChange={(event) => setSelectedZoomId(event.target.value)} className="admin-input normal-case tracking-normal">
+              {zoomNotes.map((note, index) => <option key={note.id} value={note.id}>{index === 0 ? "Latest: " : ""}{note.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         <ActionButton tone="primary" icon={<Sparkles size={16} />} subtext="Intake + assessments" onClick={() => onGenerate(`/patients/${patient.id}/generate/summary`, { save_pdf: false })}>Generate intake summary</ActionButton>
         <ActionButton tone="primary" icon={<NotebookPen size={16} />} subtext={zoom ? "From selected Zoom note" : "Needs Zoom note"} disabled={!zoom} onClick={() => zoom && onGenerate(`/patients/${patient.id}/generate/session-note`, { source_document_id: zoom.id, save_pdf: false })}>Draft session note</ActionButton>
         <ActionButton tone="secondary" icon={<Layers3 size={16} />} subtext="Summary + latest note" onClick={() => onGenerate(`/patients/${patient.id}/generate/treatment-plan`, { save_pdf: false })}>Generate treatment plan</ActionButton>
@@ -703,6 +718,56 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
     await refresh("Classification rule added.");
   }
 
+  async function createUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch("/admin/users", token, {
+      method: "POST",
+      body: JSON.stringify({
+        email: form.get("email"),
+        password: form.get("password"),
+        full_name: form.get("full_name") || null,
+        role: form.get("role"),
+        is_active: true
+      })
+    });
+    event.currentTarget.reset();
+    await refresh("User created.");
+  }
+
+  async function saveUser(event: FormEvent<HTMLFormElement>, userId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch(`/admin/users/${userId}`, token, {
+      method: "PATCH",
+      body: JSON.stringify({
+        full_name: form.get("full_name") || null,
+        role: form.get("role"),
+        is_active: form.get("is_active") === "on"
+      })
+    });
+    const password = String(form.get("password") || "");
+    if (password) {
+      await apiFetch(`/admin/users/${userId}/reset-password`, token, { method: "POST", body: JSON.stringify({ password }) });
+    }
+    await refresh(password ? "User and password saved." : "User saved.");
+  }
+
+  async function setUserActive(userId: string, active: boolean) {
+    await apiFetch(`/admin/users/${userId}/${active ? "activate" : "deactivate"}`, token, { method: "POST" });
+    await refresh(active ? "User activated." : "User deactivated.");
+  }
+
+  async function importDriveFolder(folderId: string) {
+    await apiFetch(`/admin/drive-patients/${folderId}/import`, token, { method: "POST" });
+    await refresh("Drive patient imported and linked.");
+  }
+
+  async function resyncDriveFolder(folderId: string) {
+    await apiFetch(`/admin/drive-patients/${folderId}/resync`, token, { method: "POST" });
+    await refresh("Drive patient resynced.");
+  }
+
   return (
     <div className="mt-5 grid gap-5">
       <Card className="border-moss/20 bg-gradient-to-br from-white to-sage/60">
@@ -716,8 +781,8 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric label="Rate rows" value={`${config.rates.length} total`} />
           <Metric label="Active rates" value={`${activeRates.length} active`} />
-          <Metric label="Inactive placeholders" value={`${inactiveRates} need rates`} />
-          <Metric label="Templates" value={`${config.templates.length} registered`} />
+        <Metric label="Inactive placeholders" value={`${inactiveRates} need rates`} />
+        <Metric label="Templates" value={`${config.templates.length} registered`} />
         </div>
         {message ? <div className="mt-4 rounded-2xl border border-moss/20 bg-white px-4 py-3 text-sm font-semibold text-moss shadow-sm">{message}</div> : null}
       </Card>
@@ -725,6 +790,8 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
       <div className="grid gap-5 xl:grid-cols-2">
         <AdminDiagnosticsPanel diagnostics={diagnostics} onRefresh={async () => onDiagnostics(await loadDiagnostics())} />
         <SaferPreviewToggle settings={config.settings} onToggle={toggleSaferPreview} />
+        <AdminUsersEditor users={config.users} onCreate={createUser} onSave={saveUser} onActive={setUserActive} />
+        <DriveDiscoveryPanel folders={config.drivePatients} onImport={importDriveFolder} onResync={resyncDriveFolder} />
         <AdminRatesEditor rates={config.rates} onCreate={createRate} onSave={saveRate} />
         <AdminServiceTypesEditor serviceTypes={config.serviceTypes} onCreate={createServiceType} onSave={saveServiceType} />
         <AdminClassificationEditor rules={config.classificationRules} onCreate={createClassificationRule} onSave={saveClassificationRule} />
@@ -736,9 +803,9 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
         <AdminMiniTable
           title="Template registry"
           subtitle="Production HTML templates and placeholder metadata."
-          rows={config.templates.map((template) => [template.document_type, `${template.template_name} v${template.version}`, `${template.placeholders.length} placeholders`])}
+          rows={config.templates.map((template) => [template.document_type, `${template.template_name} v${template.version}`, `${template.placeholders.length} total · ${template.prompt_placeholder_count} prompts`])}
         />
-        <AdminTemplatePreview templates={config.templates} token={token} />
+        <AdminTemplatePreview templates={config.templates} token={token} onRefresh={() => refresh("Templates refreshed.")} />
         <AdminMiniTable
           title="Workflow settings"
           subtitle="Autosave, review, Drive scan, and default payer settings."
@@ -746,6 +813,96 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
         />
       </div>
     </div>
+  );
+}
+
+function AdminUsersEditor({
+  users,
+  onCreate,
+  onSave,
+  onActive
+}: {
+  users: AdminConfig["users"];
+  onCreate: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onSave: (event: FormEvent<HTMLFormElement>, userId: string) => Promise<void>;
+  onActive: (userId: string, active: boolean) => Promise<void>;
+}) {
+  return (
+    <Card>
+      <SectionHeader title="Admin users" subtitle="Create provider/admin accounts, reset passwords, and deactivate access after bootstrap." />
+      <form onSubmit={onCreate} className="mt-4 grid gap-2 rounded-2xl border border-line bg-cream p-3 lg:grid-cols-[1fr_1fr_118px_1fr_auto]">
+        <input name="email" required type="email" placeholder="email@practice.com" className="admin-input" />
+        <input name="full_name" placeholder="Full name" className="admin-input" />
+        <select name="role" defaultValue="PROVIDER" className="admin-input">
+          <option>PROVIDER</option>
+          <option>ADMIN</option>
+        </select>
+        <input name="password" required minLength={8} type="password" placeholder="Initial password" className="admin-input" />
+        <button className="rounded-xl bg-moss px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Create</button>
+      </form>
+      <div className="mt-4 grid max-h-[440px] gap-2 overflow-auto pr-1">
+        {users.map((user) => (
+          <form key={user.id} onSubmit={(event) => onSave(event, user.id)} className="grid gap-2 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm lg:grid-cols-[1fr_1fr_118px_86px_1fr_auto_auto] lg:items-center">
+            <div className="truncate font-bold">{user.email}</div>
+            <input name="full_name" defaultValue={user.full_name || ""} placeholder="Full name" className="admin-input" />
+            <select name="role" defaultValue={user.role} className="admin-input">
+              <option>PROVIDER</option>
+              <option>ADMIN</option>
+            </select>
+            <label className="flex items-center gap-2 font-semibold text-muted">
+              <input name="is_active" type="checkbox" defaultChecked={user.is_active} className="h-4 w-4 accent-moss" />
+              Active
+            </label>
+            <input name="password" minLength={8} type="password" placeholder="New password" className="admin-input" />
+            <button className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Save</button>
+            <button type="button" onClick={() => onActive(user.id, !user.is_active)} className="rounded-xl border border-line bg-white px-3 py-2 font-bold text-muted transition hover:bg-cream">
+              {user.is_active ? "Deactivate" : "Activate"}
+            </button>
+          </form>
+        ))}
+        {!users.length ? <Empty text="No admin-managed users yet." /> : null}
+      </div>
+    </Card>
+  );
+}
+
+function DriveDiscoveryPanel({
+  folders,
+  onImport,
+  onResync
+}: {
+  folders: AdminConfig["drivePatients"];
+  onImport: (folderId: string) => Promise<void>;
+  onResync: (folderId: string) => Promise<void>;
+}) {
+  return (
+    <Card>
+      <SectionHeader title="Drive patient discovery" subtitle="Browse existing patient folders, detect source documents, and link prior patients into the local workspace." />
+      <div className="mt-4 grid max-h-[470px] gap-2 overflow-auto pr-1">
+        {folders.map((folder) => (
+          <div key={folder.folder_id} className="grid gap-3 rounded-2xl border border-line bg-white p-3 text-xs shadow-sm xl:grid-cols-[minmax(0,1fr)_180px_auto] xl:items-center">
+            <div className="min-w-0">
+              <div className="truncate font-bold text-ink">{folder.folder_name}</div>
+              <div className="mt-1 truncate text-muted">Folder {folder.folder_id} · {folder.file_count} files</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {["INTAKE", "ASSESSMENT", "ZOOM_NOTE", "OUTPUT", "UNKNOWN"].map((key) => (
+                  <span key={key} className="rounded-full border border-line bg-cream px-2.5 py-1 font-semibold text-muted">{key}: {folder.detected_counts?.[key] || 0}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <StatusBadge value={folder.linked_patient_id ? "READY" : "PENDING"} />
+              <div className="mt-2 truncate text-muted">{folder.linked_patient_name || "Not linked locally"}</div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => onImport(folder.folder_id)} className="rounded-xl bg-moss px-3 py-2 font-bold text-white shadow-sm transition hover:bg-moss/90">{folder.linked_patient_id ? "Relink" : "Import"}</button>
+              <button type="button" onClick={() => onResync(folder.folder_id)} className="rounded-xl border border-line bg-cream px-3 py-2 font-bold text-moss transition hover:bg-sage">Resync</button>
+            </div>
+          </div>
+        ))}
+        {!folders.length ? <Empty text="No Drive folders returned. Confirm Google Drive service account and root folder configuration." /> : null}
+      </div>
+    </Card>
   );
 }
 
@@ -840,14 +997,16 @@ function AdminClassificationEditor({ rules, onCreate, onSave }: { rules: AdminCo
   );
 }
 
-function AdminTemplatePreview({ templates, token }: { templates: AdminConfig["templates"]; token: string }) {
+function AdminTemplatePreview({ templates, token, onRefresh }: { templates: AdminConfig["templates"]; token: string; onRefresh: () => Promise<void> }) {
   const [templateId, setTemplateId] = useState(templates[0]?.id || "");
   const [preview, setPreview] = useState<TemplatePreview | null>(null);
+  const [sourceDraft, setSourceDraft] = useState("");
   const selected = templates.find((template) => template.id === templateId) || templates[0];
 
   useEffect(() => {
     if (!selected) return;
     setTemplateId((current) => current || selected.id);
+    setSourceDraft("");
   }, [selected]);
 
   async function loadPreview() {
@@ -869,6 +1028,30 @@ function AdminTemplatePreview({ templates, token }: { templates: AdminConfig["te
     window.open(URL.createObjectURL(blob), "_blank", "noopener,noreferrer");
   }
 
+  async function resetTemplates() {
+    await apiFetch("/admin/reset-defaults/templates", token, { method: "POST" });
+    setPreview(null);
+    await onRefresh();
+  }
+
+  async function replaceTemplate() {
+    if (!selected || !sourceDraft.trim()) return;
+    await apiFetch(`/admin/templates/${selected.id}`, token, {
+      method: "PUT",
+      body: JSON.stringify({
+        document_type: selected.document_type,
+        template_name: selected.template_name,
+        template_source: sourceDraft,
+        placeholder_style: "mixed",
+        cleanup_rules_json: selected.cleanup_rules_json,
+        is_active: true
+      })
+    });
+    setPreview(null);
+    setSourceDraft("");
+    await onRefresh();
+  }
+
   return (
     <Card>
       <SectionHeader title="Template preview" subtitle="Inspect placeholders and render a cleaned sample from the backend template engine." />
@@ -881,12 +1064,35 @@ function AdminTemplatePreview({ templates, token }: { templates: AdminConfig["te
             <div className="flex gap-2">
               <button onClick={loadPreview} className="rounded-xl bg-moss px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90">Render HTML</button>
               <button onClick={openPdfPreview} className="rounded-xl border border-line bg-white px-4 py-2 text-xs font-bold text-moss shadow-sm transition hover:bg-sage">Preview PDF</button>
+              <button onClick={resetTemplates} className="rounded-xl border border-line bg-white px-4 py-2 text-xs font-bold text-muted shadow-sm transition hover:bg-cream">Reset defaults</button>
             </div>
           </div>
-          <div className="grid gap-2 rounded-2xl border border-line bg-cream p-3 text-xs text-muted">
-            <div className="font-bold text-ink">{selected.placeholders.length} placeholders</div>
-            <div className="max-h-20 overflow-auto leading-5">{selected.placeholders.slice(0, 60).join(", ")}</div>
+          <div className="grid gap-3 rounded-2xl border border-line bg-cream p-3 text-xs text-muted">
+            <div className="grid gap-2 sm:grid-cols-4">
+              <Metric label="Total" value={`${selected.placeholders.length}`} />
+              <Metric label="AI prompts" value={`${selected.prompt_placeholder_count}`} />
+              <Metric label="Mustache" value={`${selected.mustache_placeholder_count}`} />
+              <Metric label="Repeated" value={`${selected.repeated_placeholder_count}`} />
+            </div>
+            <div className="max-h-40 overflow-auto rounded-xl bg-white p-3 leading-5">
+              {selected.placeholder_inventory.slice(0, 120).map((item) => (
+                <div key={`${item.placeholder_type}-${item.machine_key}-${item.raw_token}`} className="grid grid-cols-[86px_minmax(0,0.8fr)_minmax(0,1fr)] gap-2 border-b border-line/60 py-1 last:border-b-0">
+                  <span className="font-bold text-moss">{item.placeholder_type}</span>
+                  <span className="truncate text-ink">{item.machine_key}{item.repeat_count > 1 ? ` (${item.repeat_count}x)` : ""}</span>
+                  <span className="truncate">{item.section_name || item.prompt_text}</span>
+                </div>
+              ))}
+            </div>
           </div>
+          <details className="rounded-2xl border border-line bg-white p-3 text-xs text-muted">
+            <summary className="cursor-pointer font-bold text-ink">Replace active template source</summary>
+            <textarea value={sourceDraft} onChange={(event) => setSourceDraft(event.target.value)} placeholder="Paste complete HTML template source here" className="mt-3 min-h-56 w-full rounded-xl border border-line bg-cream p-3 font-mono text-xs outline-none focus:border-moss/45 focus:ring-4 focus:ring-moss/10" />
+            <button type="button" disabled={!sourceDraft.trim()} onClick={replaceTemplate} className="mt-2 rounded-xl bg-moss px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:bg-muted/40">Make active</button>
+          </details>
+          <details className="rounded-2xl border border-line bg-white p-3 text-xs text-muted">
+            <summary className="cursor-pointer font-bold text-ink">Raw source viewer</summary>
+            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl bg-cream p-3">{selected.template_source}</pre>
+          </details>
           {preview ? (
             <div className="grid gap-3">
               <div className="grid gap-2 sm:grid-cols-3">
@@ -894,12 +1100,12 @@ function AdminTemplatePreview({ templates, token }: { templates: AdminConfig["te
                 <Metric label="Unreplaced" value={`${preview.unreplaced_placeholders.length}`} />
                 <Metric label="Cleanup" value={`${preview.cleanup_warnings.length} notes`} />
               </div>
-              <iframe title="Template preview" srcDoc={preview.html} className="h-[340px] w-full rounded-2xl border border-line bg-white shadow-sm" />
+              <iframe title="Template preview" srcDoc={preview.html} className="h-[720px] w-full rounded-2xl border border-line bg-white shadow-sm" />
               <details className="rounded-2xl border border-line bg-cream p-3 text-xs text-muted">
                 <summary className="cursor-pointer font-bold text-ink">Raw vs cleaned HTML diagnostics</summary>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3">{preview.raw_html || ""}</pre>
-                  <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3">{preview.html}</pre>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3">{preview.raw_html || ""}</pre>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3">{preview.html}</pre>
                 </div>
               </details>
             </div>

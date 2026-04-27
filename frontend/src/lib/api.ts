@@ -49,7 +49,11 @@ export type BillingComparison = {
 export type CurrentUser = {
   id: string;
   email: string;
+  full_name: string | null;
   role: "ADMIN" | "PROVIDER";
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type AdminRate = {
@@ -93,20 +97,54 @@ export type AdminTemplate = {
   id: string;
   document_type: string;
   template_name: string;
+  template_source: string;
   placeholder_style: string;
   cleanup_rules_json: Record<string, unknown>;
   is_active: boolean;
   version: number;
   placeholders: string[];
+  placeholder_inventory: TemplatePlaceholder[];
+  prompt_placeholder_count: number;
+  mustache_placeholder_count: number;
+  repeated_placeholder_count: number;
+};
+
+export type TemplatePlaceholder = {
+  placeholder_type: "mustache" | "ai_prompt";
+  machine_key: string;
+  prompt_text: string;
+  raw_token: string;
+  section_name: string | null;
+  repeat_count: number;
+  is_required: boolean;
+  default_missing_behavior: string;
 };
 
 export type TemplatePreview = {
   html: string;
   raw_html: string | null;
   placeholders: string[];
+  placeholder_inventory: TemplatePlaceholder[];
   missing_placeholders: string[];
   unreplaced_placeholders: string[];
   cleanup_warnings: string[];
+  template_id: string | null;
+  template_version: number | null;
+};
+
+export type AdminUser = CurrentUser;
+
+export type DrivePatientFolder = {
+  folder_id: string;
+  folder_name: string;
+  linked_patient_id: string | null;
+  linked_patient_name: string | null;
+  file_count: number;
+  detected_counts: Record<string, number>;
+  has_intake: boolean;
+  has_assessments: boolean;
+  has_zoom_notes: boolean;
+  has_outputs: boolean;
 };
 
 export type AdminConfig = {
@@ -116,6 +154,8 @@ export type AdminConfig = {
   classificationRules: AdminClassificationRule[];
   settings: AdminSetting[];
   templates: AdminTemplate[];
+  users: AdminUser[];
+  drivePatients: DrivePatientFolder[];
 };
 
 export type HealthStatus = {
