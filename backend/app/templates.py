@@ -291,6 +291,7 @@ def _is_missing(value: object) -> bool:
 
 def _machine_key(prompt: str) -> str:
     text = _strip_tags(prompt).strip().lower()
+    text = re.sub(r"^\[?ai:\s*", "", text)
     text = re.sub(r"^(extract|insert|generate|provide|summarize|list)\s+", "", text)
     text = re.sub(r"\b(format|including|include|with)\b", " ", text)
     text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
