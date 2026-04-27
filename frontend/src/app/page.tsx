@@ -58,7 +58,7 @@ export default function Home() {
     setError(null);
     try {
       const data = await apiFetch<{ items: Patient[] }>("/patients", nextToken);
-      const user = await apiFetch<CurrentUser>("/me", nextToken);
+      const user = await apiFetch<CurrentUser>("/auth/me", nextToken);
       setPatients(data.items);
       setCurrentUser(user);
       if (user.role === "ADMIN") {
