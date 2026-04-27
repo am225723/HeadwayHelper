@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     enable_render_debug_logs: bool = True
     save_template_render_logs: bool = True
     save_placeholder_diagnostics: bool = True
-    admin_email: str = "support@drzelisko.com"
+    admin_email: str = "aleix@drzelisko.com"
     admin_password: str = ""
     admin_full_name: str = "Aleixander Puerta"
     run_seeds_on_startup: bool = False
