@@ -188,6 +188,20 @@ export default function Home() {
             <EmptyWorkspaceState />
           )}
           {currentUser?.role === "ADMIN" && adminConfig && token ? <AdminSettingsPanel config={adminConfig} token={token} diagnostics={diagnostics} onConfig={setAdminConfig} onDiagnostics={setDiagnostics} /> : null}
+
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="Favorite / Quick-Access Templates" subtitle="Coming soon: Star your most frequently used templates for quicker access." />
+        </Card>
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="Real-Time Generation Progress Indicator" subtitle="Coming soon: Detailed progress bar while waiting for AI generation." />
+        </Card>
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="Quick Edit Inline Mode" subtitle="Coming soon: Inline editing mode for minor adjustments before saving." />
+        </Card>
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="Automated Follow-Up Task Extraction" subtitle="Coming soon: Automatically extract action items into a to-do list." />
+        </Card>
+
         </section>
       </section>
     </main>
@@ -786,6 +800,17 @@ function AdminSettingsPanel({ config, token, diagnostics, onConfig, onDiagnostic
         </div>
         {message ? <div className="mt-4 rounded-2xl border border-moss/20 bg-white px-4 py-3 text-sm font-semibold text-moss shadow-sm">{message}</div> : null}
       </Card>
+
+
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="Custom Cleanup Rules Configurator" subtitle="Coming soon: UI to toggle and manage template rendering rules." />
+        </Card>
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="A/B Testing for AI Prompts" subtitle="Coming soon: Test different prompt structures within templates to optimize AI outputs." />
+        </Card>
+        <Card className="mt-5 border-moss/20 bg-gradient-to-br from-white to-sage/60">
+          <SectionHeader title="Dark Mode Toggle" subtitle="Coming soon: Offer a dark mode option for the admin interface for better readability." />
+        </Card>
 
       <div className="grid min-w-0 gap-5 2xl:grid-cols-2">
         <AdminDiagnosticsPanel diagnostics={diagnostics} onRefresh={async () => onDiagnostics(await loadDiagnostics())} />
