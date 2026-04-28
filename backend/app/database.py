@@ -1,7 +1,10 @@
+"""Database setup for the clinical AI backend."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -12,6 +15,8 @@ from sqlalchemy.ext.asyncio import (
 from .config import get_settings
 
 settings = get_settings()
+
+Base = declarative_base()
 
 
 def _async_database_url(url: str) -> str:
