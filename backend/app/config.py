@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -62,7 +62,7 @@ class Settings:
     )
 
     # CORS
-    allowed_origins: list[str] = None  # set below in __post_init__
+    allowed_origins: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         raw_origins = os.getenv(
@@ -79,6 +79,29 @@ class Settings:
             ),
         )
         object.__setattr__(self, "allowed_origins", _parse_allowed_origins(raw_origins))
+
+    @property
+    def sync_database_url(self) -> str:
+        """Return a SQLAlchemy sync database URL.
+
+        database.py uses create_engine(), which requires a sync driver.
+        Convert async URLs back to sync-compatible URLs.
+        """
+        url = self.db_url.strip()
+
+        if url.startswith("postgresql+asyncpg://"):
+            return url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+psycopg://", 1)
+
+        if url.startswith("sqlite+aiosqlite://"):
+            return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+
+        return url
 
 
 @lru_cache
