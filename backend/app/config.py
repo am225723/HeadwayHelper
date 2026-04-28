@@ -1,95 +1,102 @@
+"""Application configuration settings.
+
+This module centralizes configuration logic for the backend application. It
+handles loading environment variables and exposing sane defaults. When
+deploying to production, override these values via environment variables or
+configuration management. The configuration is intentionally simple to keep
+the rest of the codebase clean and easy to maintain.
+"""
+
 import os
-from functools import lru_cache
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+# Load .env only for local development. On Vercel, environment variables
+# should come from the Vercel dashboard instead.
+if not os.getenv("VERCEL"):
+    load_dotenv()
+
+# Google Drive configuration
+GOOGLE_DRIVE_ROOT_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID", "")
+
+# Path to the JSON credentials file for a service account. This account
+# requires access to the Google Drive folder hierarchy. In production you
+# should secure this file and not commit it to source control.
+GOOGLE_SERVICE_ACCOUNT_FILE: str = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_FILE",
+    "service-account.json",
+)
+
+# Raw service account JSON for serverless platforms where writing a
+# credentials file is awkward or undesirable.
+GOOGLE_SERVICE_ACCOUNT_JSON: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+
+# API keys for third-party AI providers. These values are optional; if they
+# are absent the application will fall back to stubbed responses.
+PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
+GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
+# HTML template filenames.
+TX_TEMPLATE_NAME: str = os.getenv("TX_TEMPLATE_NAME", "Clinical_Treatment_Plan.html")
+SESSION_TEMPLATE_NAME: str = os.getenv("SESSION_TEMPLATE_NAME", "Session_Notes_Template.html")
+SUMMARY_TEMPLATE_NAME: str = os.getenv("SUMMARY_TEMPLATE_NAME", "Clinical_Summary_Template.html")
 
 
-class Settings(BaseSettings):
-    app_env: str = "development"
-    app_name: str = "Clinical AI Webapp"
-    debug: bool = True
-    log_level: str = "info"
-    database_url: str = "sqlite:///./clinical_ai.db"
-    jwt_secret_key: str = "change-me"
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = Field(default=1440, validation_alias="JWT_EXPIRE_MINUTES")
-    allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    google_drive_root_folder_id: str | None = None
-    google_service_account_json: str | None = None
-    drive_scan_interval: int = 300
-    ai_provider: str = "perplexity"
-    perplexity_api_key: str | None = None
-    perplexity_model: str = "sonar"
-    perplexity_fallback_prompt_for_new_key: bool = True
-    gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-pro"
-    openai_api_key: str | None = None
-    openai_model: str | None = None
-    summary_template_name: str = "Clinical_Summary_Template.html"
-    session_template_name: str = "Session_Notes_Template.html"
-    treatment_template_name: str = "Treatment_Plan_Template.html"
-    pdf_output_tmp_dir: str = "/tmp/clinical-ai"
-    default_payer: str = "Aetna"
-    eval_comparison_enabled: bool = True
-    summary_auto_save_pdf: bool = True
-    session_note_default_mode: str = "draft"
-    treatment_plan_default_mode: str = "review"
-    enable_safer_preview_flow: bool = True
-    enable_diagnostics: bool = True
-    enable_healthchecks: bool = True
-    enable_render_debug_logs: bool = True
-    save_template_render_logs: bool = True
-    save_placeholder_diagnostics: bool = True
-    admin_email: str = "aleix@drzelisko.com"
-    admin_password: str = ""
-    admin_full_name: str = "Aleixander Puerta"
-    run_seeds_on_startup: bool = False
-    seed_reimbursement_rates: bool = True
-    seed_default_service_types: bool = True
-    seed_default_classification_rules: bool = True
-    seed_default_workflow_settings: bool = True
-    seed_default_templates: bool = True
-    reimbursement_table_path: str = "app/reimbursement_rates.example.json"
+def _normalize_database_url(url: str) -> str:
+    """Return a SQLAlchemy async database URL.
 
-    model_config = SettingsConfigDict(env_file=None if os.getenv("VERCEL") else ".env", extra="ignore")
-
-    @property
-    def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
-
-    @property
-    def access_token_expire_minutes(self) -> int:
-        return self.jwt_expire_minutes
-
-    @property
-    def sync_database_url(self) -> str:
-        url = self.database_url.strip()
-
-        if url.startswith("postgresql+asyncpg://"):
-            return url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
-
-        if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+psycopg://", 1)
-
-        if url.startswith("postgres://"):
-            return url.replace("postgres://", "postgresql+psycopg://", 1)
-
-        return url
-
-    def startup_warnings(self) -> list[str]:
-        warnings: list[str] = []
-        if self.app_env.lower() == "production":
-            if self.database_url.startswith("sqlite"):
-                warnings.append("DATABASE_URL should point to Postgres in production.")
-            if self.jwt_secret_key in {"change-me", "", "replace-with-a-long-random-secret"}:
-                warnings.append("JWT_SECRET_KEY must be set to a long random secret in production.")
-            if not self.google_service_account_json or not self.google_drive_root_folder_id:
-                warnings.append("Google Drive service account and root folder are required for production storage.")
-            if self.ai_provider.lower() == "perplexity" and not self.perplexity_api_key:
-                warnings.append("PERPLEXITY_API_KEY is required when AI_PROVIDER=perplexity.")
-        return warnings
+    Vercel marketplace providers commonly expose plain postgres:// or
+    postgresql:// URLs. SQLAlchemy async sessions need the asyncpg driver
+    suffix, while local SQLite should keep using aiosqlite.
+    """
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
 
 
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
+DB_URL: str = _normalize_database_url(
+    os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./clinical_ai.db")
+)
+
+
+def _parse_allowed_origins(raw_origins: str) -> list[str]:
+    """Parse comma-separated CORS origins from an environment variable."""
+    return [
+        origin.strip().rstrip("/")
+        for origin in raw_origins.split(",")
+        if origin.strip()
+    ]
+
+
+# CORS configuration.
+#
+# Required production frontend:
+#   https://headway.docz.space
+#
+# Backend domain is included too for direct browser/API testing.
+ALLOWED_ORIGINS: list[str] = _parse_allowed_origins(
+    os.getenv(
+        "ALLOWED_ORIGINS",
+        ",".join(
+            [
+                "https://headway.docz.space",
+                "https://backend.docz.space",
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:5173",
+            ]
+        ),
+    )
+)
+
+
+def get_templates_dir() -> str:
+    """Return the absolute path to the templates directory.
+
+    The templates directory is expected to live in the same folder as this
+    config module under `templates`. This helper avoids hardcoding
+    platform-specific separators throughout the application.
+    """
+    return os.path.join(os.path.dirname(__file__), "templates")
